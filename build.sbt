@@ -5,11 +5,13 @@ val Version = "1.1.2-SNAPSHOT"
 // https://github.com/locationtech/jts/blob/master/MIGRATION.md
 // libraryDependencies += "org.locationtech.jts" % "jts" % "1.16.0" pomOnly()
 
+val sparkVersion = "2.0.2"
+
 val jts = "com.vividsolutions" % "jts" % "1.13"
-val spark = "org.apache.spark" %% "spark-core" % "2.0.2" % "provided"
-val sparkSQL = "org.apache.spark" %% "spark-sql" % "2.0.2" % "provided"
+val spark = "org.apache.spark" %% "spark-core" % sparkVersion % "provided"
+val sparkSQL = "org.apache.spark" %% "spark-sql" % sparkVersion % "provided"
 val scalaTest = "org.scalatest" %% "scalatest" % "3.0.5" % "test"
-val sparkTestingBase = "com.holdenkarau" %% "spark-testing-base" % "2.0.2_0.11.0" % "test"
+val sparkTestingBase = "com.holdenkarau" %% "spark-testing-base" % s"${sparkVersion}_0.11.0" % "test"
 
 val buildSettings = Defaults.coreDefaultSettings ++ Seq(
   organization := Organization,
@@ -24,12 +26,3 @@ lazy val spatialSpark: Project = Project("spatial-spark", file("."))
       buildSettings ++ Seq(
         libraryDependencies ++= Seq(jts, scalaTest, sparkTestingBase, spark, sparkSQL)
       ))
-
-assemblyMergeStrategy in assembly := {
-  case n if n.startsWith("META-INF") => MergeStrategy.discard
-  case n if n.contains("Log$Logger.class") => MergeStrategy.last
-  case n if n.contains("Log.class") => MergeStrategy.last
-  case n if n.contains("META-INF/MANIFEST.MF") => MergeStrategy.discard
-  case n if n.contains("commons-beanutils") => MergeStrategy.discard
-  case _ => MergeStrategy.first
-}
