@@ -108,6 +108,7 @@ object BroadcastSpatialJoin {
     }
   }
 
+  // TODO: check if serializable
   private val distanceImpl = new JTSDistanceImpl()
 
   // lon,lat data adaptation to JTS Euclidian geometry
