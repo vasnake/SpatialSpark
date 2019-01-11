@@ -18,16 +18,27 @@ package spatialspark.join
 
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.Row
 import spatialspark.operator.SpatialOperator._
 
 class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with SpatialJoinBehaviors {
 
   def broadcastSpatialJoinAlgorithm = new SpatialJoinAlgorithm {
+
     override def run(firstGeomWithId: RDD[(Long, Geometry)],
                      secondGeomWithId: RDD[(Long, Geometry)],
                      predicate: SpatialOperator): List[(Long, Long)] = {
-      BroadcastSpatialJoin(sc, firstGeomWithId, secondGeomWithId, predicate).collect().toList
+
+      // TODO: refactor, factor out to-from conversions for Long-Row (in SpatialJoinApp also)
+      BroadcastSpatialJoin(sc,
+        firstGeomWithId.map { case (id, geom) => (Row(id), geom)},
+        secondGeomWithId.map { case (id, geom) => (Row(id), geom)},
+        predicate
+      ).map { case (leftRow, rightRow, leftGeom, rightGeom) =>
+        (leftRow.getLong(0), rightRow.getLong(0))
+      }.collect().toList
     }
+
   }
 
   behavior of "BroadcastSpatialJoin algorithm"

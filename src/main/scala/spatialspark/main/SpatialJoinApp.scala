@@ -25,6 +25,7 @@ import spatialspark.partition.stp.SortTilePartitionConf
 import spatialspark.join.{BroadcastSpatialJoin, PartitionedSpatialJoin}
 import spatialspark.util.MBR
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.Row
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.util.Try
@@ -156,53 +157,72 @@ object SpatialJoinApp {
 
     val beginTime = System.currentTimeMillis()
 
+    // TODO: check if serializable
+    val wktreader = new WKTReader()
+
+    def featureIdAndGeometry(data: RDD[(Array[String], Long)], num: Int): RDD[(Row, Geometry)] = {
+      // TODO: refactor using flatmap
+      val optgeom = data.map { case (wkts, id) =>
+        (Row(id), Try(wktreader.read(wkts(num))))
+      }
+
+      optgeom.filter {
+        case (id, optg) => optg.isSuccess
+      }.map {
+        case (id, optg) => (id, optg.get)
+      }
+    }
+
     //load left dataset
     val leftData = sc.textFile(leftFile, numPartitions).map(x => x.split(SEPARATOR)).zipWithIndex()
-
-    val leftGeometryById = leftData.map(x => (x._2, Try(new WKTReader().read(x._1.apply(leftGeometryIndex)))))
-      .filter(_._2.isSuccess).map(x => (x._1, x._2.get))
+    val leftGeometryById = featureIdAndGeometry(leftData, leftGeometryIndex)
 
     //load right dataset
     val rightData = sc.textFile(rightFile, numPartitions).map(x => x.split(SEPARATOR)).zipWithIndex()
-
-    val rightGeometryById = rightData.map(x => (x._2, Try(new WKTReader().read(x._1.apply(rightGeometryIndex)))))
-      .filter(_._2.isSuccess).map(x => (x._1, x._2.get))
+    val rightGeometryById = featureIdAndGeometry(rightData, rightGeometryIndex)
 
     //join processing
-    var matchedPairs: RDD[(Long, Long)] = sc.emptyRDD
-    if (broadcastJoin)
-      matchedPairs = BroadcastSpatialJoin(sc, leftGeometryById, rightGeometryById, joinPredicate, radius)
-    else {
-      //get extent that covers both datasets
-      val extent = extentString match {
-        case "" =>
-          val temp = leftGeometryById.map(x => x._2.getEnvelopeInternal)
-            .map(x => (x.getMinX, x.getMinY, x.getMaxX, x.getMaxY))
-            .reduce((a, b) => (a._1 min b._1, a._2 min b._2, a._3 max b._3, a._4 max b._4))
-          val temp2 = rightGeometryById.map(x => x._2.getEnvelopeInternal)
-            .map(x => (x.getMinX, x.getMinY, x.getMaxX, x.getMaxY))
-            .reduce((a, b) => (a._1 min b._1, a._2 min b._2, a._3 max b._3, a._4 max b._4))
-          (temp._1 min temp2._1, temp._2 min temp2._2, temp._3 max temp2._3, temp._4 max temp2._4)
-        case _ => (extentString.split(":").apply(0).toDouble, extentString.split(":").apply(1).toDouble,
-          extentString.split(":").apply(2).toDouble, extentString.split(":").apply(3).toDouble)
+    val matchedPairs: RDD[(Long, Long)] = {
+      if (broadcastJoin) {
+        BroadcastSpatialJoin(sc, leftGeometryById, rightGeometryById, joinPredicate, radius)
+            .map { case (leftRow, rightRow, leftGeom, rightGeom) =>
+              (leftRow.getLong(0), rightRow.getLong(0)) }
       }
+      else {
+        //get extent that covers both datasets
+        val extent = extentString match {
+          case "" =>
+            val temp = leftGeometryById.map(x => x._2.getEnvelopeInternal)
+                .map(x => (x.getMinX, x.getMinY, x.getMaxX, x.getMaxY))
+                .reduce((a, b) => (a._1 min b._1, a._2 min b._2, a._3 max b._3, a._4 max b._4))
+            val temp2 = rightGeometryById.map(x => x._2.getEnvelopeInternal)
+                .map(x => (x.getMinX, x.getMinY, x.getMaxX, x.getMaxY))
+                .reduce((a, b) => (a._1 min b._1, a._2 min b._2, a._3 max b._3, a._4 max b._4))
+            (temp._1 min temp2._1, temp._2 min temp2._2, temp._3 max temp2._3, temp._4 max temp2._4)
+          case _ => (extentString.split(":").apply(0).toDouble, extentString.split(":").apply(1).toDouble,
+              extentString.split(":").apply(2).toDouble, extentString.split(":").apply(3).toDouble)
+        }
 
-      val partConf = method match {
-        case "stp" =>
-          val dimX = methodConf.split(":").apply(0).toInt
-          val dimY = methodConf.split(":").apply(1).toInt
-          val ratio = methodConf.split(":").apply(2).toDouble
-          new SortTilePartitionConf(dimX, dimY, new MBR(extent._1, extent._2, extent._3, extent._4), ratio, paralllelPartition)
-        case "bsp" =>
-          val level = methodConf.split(":").apply(0).toLong
-          val ratio = methodConf.split(":").apply(1).toDouble
-          new BinarySplitPartitionConf(ratio, new MBR(extent._1, extent._2, extent._3, extent._4), level, paralllelPartition)
-        case _ =>
-          val dimX = methodConf.split(":").apply(0).toInt
-          val dimY = methodConf.split(":").apply(1).toInt
-          new FixedGridPartitionConf(dimX, dimY, new MBR(extent._1, extent._2, extent._3, extent._4))
+        val partConf = method match {
+          case "stp" =>
+            val dimX = methodConf.split(":").apply(0).toInt
+            val dimY = methodConf.split(":").apply(1).toInt
+            val ratio = methodConf.split(":").apply(2).toDouble
+            new SortTilePartitionConf(dimX, dimY, new MBR(extent._1, extent._2, extent._3, extent._4), ratio, paralllelPartition)
+          case "bsp" =>
+            val level = methodConf.split(":").apply(0).toLong
+            val ratio = methodConf.split(":").apply(1).toDouble
+            new BinarySplitPartitionConf(ratio, new MBR(extent._1, extent._2, extent._3, extent._4), level, paralllelPartition)
+          case _ =>
+            val dimX = methodConf.split(":").apply(0).toInt
+            val dimY = methodConf.split(":").apply(1).toInt
+            new FixedGridPartitionConf(dimX, dimY, new MBR(extent._1, extent._2, extent._3, extent._4))
+        }
+
+        val leftGeomById = leftGeometryById.map { case (row, geom) => (row.getLong(0), geom)}
+        val rightGeomById = rightGeometryById.map { case (row, geom) => (row.getLong(0), geom)}
+        PartitionedSpatialJoin(sc, leftGeomById, rightGeomById, joinPredicate, radius, partConf)
       }
-      matchedPairs = PartitionedSpatialJoin(sc, leftGeometryById, rightGeometryById, joinPredicate, radius, partConf)
     }
 
     println(matchedPairs.count())
