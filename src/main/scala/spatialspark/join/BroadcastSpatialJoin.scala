@@ -28,13 +28,14 @@ import spatialspark.join.broadcast.index._
 object BroadcastSpatialJoin {
 
   // ((T, Geometry), distanceLimit)
-  private def itemGeometry(item: AnyRef) = item.asInstanceOf[((_, Geometry), _)]._1._2
   // TODO: why do we need arbitrary object instead of old Long? Dataset w/o key[Long]?
+  private def makeItem[T](obj: T, geom: Geometry, dist: Double) = ((obj, geom), dist)
   private def itemObject[T](item: AnyRef) = item.asInstanceOf[((T, _), _)]._1._1
+  private def itemGeometry(item: AnyRef) = item.asInstanceOf[((_, Geometry), _)]._1._2
   // WithinD predicate implementation details
   private def itemDistance(item: AnyRef) = item.asInstanceOf[((_, _), Double)]._2
 
-  // NearestD predicat implementation details
+  // NearestD predicate implementation details
   class STRTreeItemDistanceImpl(geom: ItemBoundable => Geometry)
       extends ItemDistance with Serializable {
 
@@ -48,7 +49,7 @@ object BroadcastSpatialJoin {
   )
 
   private
-  def queryRtree[L, R](index: => Broadcast[STRtree],
+  def queryRtree[L, R](index: Broadcast[STRtree],
                        leftObj: L,
                        leftGeom: Geometry,
                        predicate: SpatialOperator.SpatialOperator,
@@ -67,28 +68,29 @@ object BroadcastSpatialJoin {
     }
 
     def result(lst: Array[AnyRef]) = lst.map { f => (itemObject[R](f), itemGeometry(f)) }
+    def emptyResult = result(Array.empty)
+    def filterCandidates(leftRelRight: Geometry => Boolean) =
+      result(candidates.filter(f => leftRelRight(itemGeometry(f))))
 
-    if (predicate == SpatialOperator.Within)
-      result(candidates.filter(f => leftGeom.within(itemGeometry(f))))
-    else if (predicate == SpatialOperator.Contains)
-      result(candidates.filter(f => leftGeom.contains(itemGeometry(f))))
-    else if (predicate == SpatialOperator.Intersects)
-      result(candidates.filter(f => leftGeom.intersects(itemGeometry(f))))
-    else if (predicate == SpatialOperator.Overlaps)
-      result(candidates.filter(f => leftGeom.overlaps(itemGeometry(f))))
+    predicate match {
+      // TODO: why do we need variable itemDistance instead of const radius?
+      case SpatialOperator.WithinD => result(candidates.filter(f =>
+        leftGeom.isWithinDistance(itemGeometry(f), itemDistance(f))))
 
-    // TODO: why do we need variable itemDistance instead of const radius?
-    else if (predicate == SpatialOperator.WithinD)
-      result(candidates.filter(f => leftGeom.isWithinDistance(itemGeometry(f), itemDistance(f))))
+      case SpatialOperator.Within => filterCandidates(leftGeom.within)
+      case SpatialOperator.Contains => filterCandidates(leftGeom.contains)
+      case SpatialOperator.Intersects => filterCandidates(leftGeom.intersects)
+      case SpatialOperator.Overlaps => filterCandidates(leftGeom.overlaps)
 
-    // TODO: extra condition is not applied here; you shouldn't use condition with NearestD predicate!
-    else if (predicate == SpatialOperator.NearestD && index.value.size() > 0) {
-      val item = index.value.nearestNeighbour(queryBox, ((null, leftGeom), null), distanceFunc)
-      result(Array(item))
+      // TODO: extra condition is not applied here; you shouldn't use condition with NearestD predicate!
+      case SpatialOperator.NearestD => if (index.value.size() > 0) {
+        val item = index.value.nearestNeighbour(queryBox, ((null, leftGeom), null), distanceFunc)
+        result(Array(item))
+      } else emptyResult
+
+      // unknown predicate
+      case _ => emptyResult
     }
-
-    // unknown predicate
-    else result(Array.empty)
   }
 
   /**
@@ -106,51 +108,53 @@ object BroadcastSpatialJoin {
   def apply[L, R](sc: SparkContext,
                   left: RDD[(L, Geometry)],
                   right: RDD[(R, Geometry)],
-                  joinPredicate: SpatialOperator,
+                  joinPredicate: SpatialOperator.SpatialOperator,
                   radius: Double = 0,
                   condition: Option[(L, R) => Boolean] = None
                  ): RDD[(L, R, Geometry, Geometry)] = {
 
-    // create R-tree on right dataset
-    val rtreeBcast = {
-      val strtree = new STRtree()
+    // create ST-R-tree on right dataset
+    val index = sc.broadcast(buildIndex[R](right, radius))
 
-      right.filter(r => r._2 != null).collect().foreach(rec => {
-        val bbox = rec._2.getEnvelopeInternal
-        if (radius != 0) {
-          // radius should be in meters so we can calc box size according to rec.latitude
-          // using cos(lat): 112 * cos(lat) = km-in-degree
-          val delta = metre2degree(radius, bbox.centre.y)
-          //println(s"delta: ${delta}, radius: ${radius}")
-          //println(s"radius: ${delta}, bbox before: ${bbox.toString}")
-
-          // expand envelop: minX -= delta; maxX += delta, ...
-          bbox.expandBy(delta)
-          //println(s"bbox after: ${bbox.toString}")
-
-          // store delta in tree for optimization purposes
-          strtree.insert(bbox, (rec, delta))
+    left
+        .filter(r => r._2 != null)
+        .flatMap { case (leftObj, leftGeom) =>
+          val rightRecs = queryRtree[L, R](index, leftObj, leftGeom, joinPredicate, condition)
+          // inner join
+          rightRecs.map { case (rightObj, rightGeom) => (leftObj, rightObj, leftGeom, rightGeom) }
+          // TODO: left join
         }
-        else strtree.insert(bbox, (rec, 0))
-      })
-
-      sc.broadcast(strtree)
-    }
-
-    left.filter(r => r._2 != null)
-        .flatMap(rec => {
-          if (condition.isDefined)
-            queryRtree[L, R](rtreeBcast, rec._1, rec._2, joinPredicate, radius, condition.get)
-          else
-            queryRtree[L, R](rtreeBcast, rec._1, rec._2, joinPredicate, radius)
-        } )
   }
 
-  val degreesInMeter = 1d / 111200d
-  val pi180 = math.Pi / 180d
+  private def buildIndex[T](rdd: RDD[(T, Geometry)], maxDistance: Double) = {
+    val strtree = new STRtree()
 
-  def metre2degree(metre: Double, lon: Double): Double = {
-    (metre * degreesInMeter) / math.cos(lon * pi180)
+    rdd
+        .filter { case (_, geom) => geom != null }
+        .map { case (obj, geom) => {
+          val envelope = geom.getEnvelopeInternal
+          // TODO: why do we need variable degree distance?
+          val maxDegrees: Double = if (maxDistance != 0) {
+            val deg = metre2degree(maxDistance, envelope.centre.y)
+            envelope.expandBy(deg)
+            deg
+          }
+          else 0
+
+          (envelope, makeItem(obj, geom, maxDegrees))
+        }}
+        .collect
+        .foreach(rec => strtree.insert(rec._1, rec._2))
+
+    strtree
+  }
+
+  // TODO: why divide by cos(latitude)? where from that magic constant?
+  private val degreesInMeter = 1d / 111200d
+  private val pi180 = math.Pi / 180d
+
+  private def metre2degree(metre: Double, lat: Double): Double = {
+    (metre * degreesInMeter) / math.cos(lat * pi180)
   }
 
 }
