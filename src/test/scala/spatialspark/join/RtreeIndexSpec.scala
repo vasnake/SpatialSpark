@@ -7,6 +7,7 @@ import com.vividsolutions.jts.geom.{Coordinate, GeometryFactory}
 import spatialspark.join.broadcast.index.{FeatureExt, RtreeIndex}
 
 
+// testOnly spatialspark.join.RtreeIndexSpec -- -z "RtreeIndex"
 class RtreeIndexSpec extends FunSuite with Matchers {
 
     test("RtreeIndex can be created and queried") {
