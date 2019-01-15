@@ -45,4 +45,5 @@ class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with Spat
 
   it should behave like spatialJoinAlgorithm(broadcastSpatialJoinAlgorithm)
 
+//  override protected def withFixture(test: Any): Outcome = ???
 }
