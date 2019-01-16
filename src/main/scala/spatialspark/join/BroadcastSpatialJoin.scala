@@ -26,26 +26,72 @@ import spatialspark.operator.SpatialOperator
 
 object BroadcastSpatialJoin {
 
-  // ((T, Geometry), distanceLimit)
-  // TODO: why do we need arbitrary object instead of old Long? Dataset w/o key[Long]?
-  private def makeItem[T](obj: T, geom: Geometry, dist: Double) = ((obj, geom), dist)
-  private def itemObject[T](item: AnyRef) = item.asInstanceOf[((T, _), _)]._1._1
-  private def itemGeometry(item: AnyRef) = item.asInstanceOf[((_, Geometry), _)]._1._2
-  // WithinD predicate implementation details
-  private def itemDistance(item: AnyRef) = item.asInstanceOf[((_, _), Double)]._2
+  // Why do we need arbitrary object instead of key[Long]?
+  // For arbitrary datasets not always possible select deterministic key[Long].
+  // Sometimes, using key[Long] you need to make a second join, to select
+  // additional columns for resulting dataset. Using arbitrary object (e.g. Row)
+  // it's possible to eliminate secondary join. Also, it's possible to filter data before
+  // spatial predicate application, using condition(leftObject, rightObject): Boolean
 
-  // NearestD predicate implementation details
-  class STRTreeItemDistanceImpl(geom: ItemBoundable => Geometry)
-      extends ItemDistance with Serializable {
+  // Why do we need Geometry objects in join result?
+  //  You may want to apply more accurate filters after join, based on geometry objects.
+  //  You may want to produce some derivative from (leftGeom, rightGeom), e.g. area,
+  //  perimeter, center, distance, etc.
+  //  You may want to join another dataset with spatial relation,
+  //  or extend your pipeline with any spatial functions
 
-    override def distance(item1: ItemBoundable, item2: ItemBoundable): Double = {
-      geom(item1).distance(geom(item2))
-    }
+  // TODO: add possibility to choose, WGS84 or Eucledian coords.
+  // TODO: add join type option, 'inner', 'left-outer' .
+  // TODO: add projection operator, possibility to define result columns.
+
+  /**
+    * Inner join: for each record from left find all records in right, that satisfy
+    * 'condition' and 'joinPredicate'.
+    * Geometries should be Lon,Lat-based (WGS84).
+    *
+    * Two special cases: joinPredicate = WithinD or NearestD
+    *
+    *   NearestD: in this case 'condition' filter can't be used => you shouldn't
+    *   call join with both (spatial=NearestD and logical!=None) conditions.
+    *
+    *   WithinD: in this case you may have to apply after join more accurate filter
+    *   using geodetic distance implementation. Join uses JTS distance implementation,
+    *   that don't work with Lon,Lat coordinates and for that reason
+    *   here we apply metre2degree conversion for 'radius' parameter,
+    *   and conversion result depends on geometry latitude.
+    *
+    * @param sc context
+    * @param left big dataset for iterate over (flatmap)
+    * @param right small dataset, will be broadcasted
+    * @param joinPredicate spatial relation, one of (WithinD, Within, Contains, Intersects, Overlaps, NearestD).
+    *                      Relation will be queried in form: leftGeom.relate(rightGeom)
+    * @param radius distance in meters, used in WithinD relation: leftGeom.isWithinDistance(rightGeom, maxArcLen),
+    *               where maxArcLen is a arc len in degrees (WGS84 model) on a latitude of rightGeom.
+    * @tparam L type of left object
+    * @tparam R type of right object
+    * @return inner join result: (left, right, leftGeom, rightGeom)
+    */
+  def apply[L, R](sc: SparkContext,
+                  left: RDD[(L, Geometry)],
+                  right: RDD[(R, Geometry)],
+                  joinPredicate: SpatialOperator.SpatialOperator,
+                  radius: Double = 0,
+                  condition: Option[(L, R) => Boolean] = None
+                 ): RDD[(L, R, Geometry, Geometry)] = {
+
+    // create ST-R-tree on right dataset
+    val index = sc.broadcast(buildIndex[R](right, radius))
+
+    left
+        .filter(r => r._2 != null)
+        .flatMap { case (leftObj, leftGeom) => {
+          val rightRecs = queryRtree[L, R](index, leftObj, leftGeom, joinPredicate, condition)
+
+          // inner join
+          rightRecs.map { case (rightObj, rightGeom) => (leftObj, rightObj, leftGeom, rightGeom) }
+          // TODO: left outer join
+        }}
   }
-
-  private val distanceFunc = new STRTreeItemDistanceImpl(
-    item => itemGeometry(item.getItem)
-  )
 
   private
   def queryRtree[L, R](index: Broadcast[STRtree],
@@ -72,7 +118,9 @@ object BroadcastSpatialJoin {
       result(candidates.filter(f => leftRelRight(itemGeometry(f))))
 
     predicate match {
-      // TODO: why do we need variable itemDistance instead of const radius?
+      // Why do we need variable itemDistance instead of const radius?
+      // JTS distance work with Eucledian coords, but we are using Lon,Lat =>
+      // distance in degrees different for different latitude for same distance in metres.
       case SpatialOperator.WithinD => result(candidates.filter(f =>
         leftGeom.isWithinDistance(itemGeometry(f), itemDistance(f))))
 
@@ -81,7 +129,7 @@ object BroadcastSpatialJoin {
       case SpatialOperator.Intersects => filterCandidates(leftGeom.intersects)
       case SpatialOperator.Overlaps => filterCandidates(leftGeom.overlaps)
 
-      // TODO: extra condition is not applied here; you shouldn't use condition with NearestD predicate!
+      // Extra 'condition' is not applied here; you shouldn't use 'condition' with NearestD predicate!
       case SpatialOperator.NearestD => if (index.value.size() > 0) {
         val item = index.value.nearestNeighbour(queryBox, ((null, leftGeom), null), distanceFunc)
         result(Array(item))
@@ -92,38 +140,37 @@ object BroadcastSpatialJoin {
     }
   }
 
+  // Objects stored in index: (T, Geometry, distanceLimit) // TODO: case class?
+  private def makeItem[T](obj: T, geom: Geometry, dist: Double) = (obj, geom, dist)
+  private def itemObject[T](item: AnyRef) = item.asInstanceOf[(T, _, _)]._1
+  private def itemGeometry(item: AnyRef) = item.asInstanceOf[(_, Geometry, _)]._2
+  // WithinD predicate implementation details
+  private def itemDistance(item: AnyRef) = item.asInstanceOf[(_, _, Double)]._3
+
   /**
-    * For each record in left find all records in right, that satisfy joinPredicate.
-    * Geometries should be in Lon,Lat-based.
-    * @param sc context
-    * @param left big dataset for iterate over (flatmap)
-    * @param right small dataset, will be broadcasted
-    * @param joinPredicate spatial relation, e.g. contain, intersects, ...
-    * @param radius meters, used in withinD relation: leftGeom.isWithinDistance(rightGeom, radius)
-    * @tparam L type of left object
-    * @tparam R type of right object
-    * @return inner join result: (left, right, left_geom, right_geom)
+    * Distance(g1, g2) implementation for NearestD predicate processing.
+    * JTS Geometry.distance have two main disadvantages:
+    *   it's slow O(n*n);
+    *   it's Eucledian and don't work with WGS84 Lon,Lat coordinates properly.
+    * But, it also have a huge advantage: you don't need to implement
+    * fast and accurate distance(g1, g2), because it fast enough for simple geometries
+    * and for NearestD predicate we need only relative distance between pairs of objects.
+    *
+    * @param geom function, selector for accessing Geometry object in ItemBoundable
     */
-  def apply[L, R](sc: SparkContext,
-                  left: RDD[(L, Geometry)],
-                  right: RDD[(R, Geometry)],
-                  joinPredicate: SpatialOperator.SpatialOperator,
-                  radius: Double = 0,
-                  condition: Option[(L, R) => Boolean] = None
-                 ): RDD[(L, R, Geometry, Geometry)] = {
+  class STRTreeItemDistanceImpl(geom: ItemBoundable => Geometry)
+      extends ItemDistance with Serializable {
 
-    // create ST-R-tree on right dataset
-    val index = sc.broadcast(buildIndex[R](right, radius))
-
-    left
-        .filter(r => r._2 != null)
-        .flatMap { case (leftObj, leftGeom) =>
-          val rightRecs = queryRtree[L, R](index, leftObj, leftGeom, joinPredicate, condition)
-          // inner join
-          rightRecs.map { case (rightObj, rightGeom) => (leftObj, rightObj, leftGeom, rightGeom) }
-          // TODO: left outer join
-        }
+    override def distance(item1: ItemBoundable, item2: ItemBoundable): Double =
+      geom(item1).distance(geom(item2))
   }
+
+  /**
+    * Distance function instance for NearestD predicate
+    */
+  private val distanceFunc = new STRTreeItemDistanceImpl(
+    item => itemGeometry(item.getItem)
+  )
 
   private def buildIndex[T](rdd: RDD[(T, Geometry)], maxDistance: Double) = {
     val strtree = new STRtree()
@@ -131,11 +178,16 @@ object BroadcastSpatialJoin {
     rdd
         .filter { case (_, geom) => geom != null }
         .map { case (obj, geom) => {
+          // will be expanded if maxDistance != 0, for WithinD predicate
           val envelope = geom.getEnvelopeInternal
-          // TODO: why do we need variable degree distance?
+
+          // Why do we need variable degree distance?
+          // JTS distance work with Eucledian coords, but we are using Lon,Lat =>
+          // distance in degrees different for different latitude for same distance in metres.
           val maxDegrees: Double = if (maxDistance != 0) {
             val deg = metre2degree(maxDistance, envelope.centre.y)
             envelope.expandBy(deg)
+
             deg
           }
           else 0
@@ -148,10 +200,18 @@ object BroadcastSpatialJoin {
     strtree
   }
 
-  // TODO: why divide by cos(latitude)? where from that magic constant?
+  /**
+    * Length of arc on equator about 100km for 1 degree
+    */
   private val degreesInMeter = 1d / 111200d
   private val pi180 = math.Pi / 180d
 
+  /**
+    * For high latitude returns bigger value: length of arc in degrees along parallel on that latitude
+    * @param metre desirable length of arc in meters
+    * @param lat scale coefficient effectively
+    * @return approximate value for arc length in degrees
+    */
   private def metre2degree(metre: Double, lat: Double): Double = {
     (metre * degreesInMeter) / math.cos(lat * pi180)
   }
