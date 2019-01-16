@@ -29,14 +29,9 @@ class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with Spat
                      secondGeomWithId: RDD[(Long, Geometry)],
                      predicate: SpatialOperator): List[(Long, Long)] = {
 
-      // TODO: refactor, factor out to-from conversions for Long-Row (in SpatialJoinApp also)
-      BroadcastSpatialJoin(sc,
-        firstGeomWithId.map { case (id, geom) => (Row(id), geom)},
-        secondGeomWithId.map { case (id, geom) => (Row(id), geom)},
-        predicate
-      ).map { case (leftRow, rightRow, leftGeom, rightGeom) =>
-        (leftRow.getLong(0), rightRow.getLong(0))
-      }.collect().toList
+      BroadcastSpatialJoin(sc, firstGeomWithId, secondGeomWithId, predicate)
+          .map { case (left, right, _, _) => (left, right)}
+          .collect.toList
     }
 
   }
