@@ -17,7 +17,7 @@
 package spatialspark.main
 
 import com.vividsolutions.jts.io.{WKBReader, WKTReader}
-import com.vividsolutions.jts.geom.Geometry
+import com.vividsolutions.jts.geom.{Geometry, GeometryFactory, PrecisionModel}
 import spatialspark.operator.SpatialOperator
 import spatialspark.partition.bsp.BinarySplitPartitionConf
 import spatialspark.partition.fgp.FixedGridPartitionConf
@@ -25,7 +25,6 @@ import spatialspark.partition.stp.SortTilePartitionConf
 import spatialspark.join.{BroadcastSpatialJoin, PartitionedSpatialJoin}
 import spatialspark.util.MBR
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.util.Try
@@ -157,20 +156,14 @@ object SpatialJoinApp {
 
     val beginTime = System.currentTimeMillis()
 
-    // TODO: check if serializable
-    val wktreader = new WKTReader()
+    def featureIdAndGeometry(data: RDD[(Array[String], Long)], num: Int): RDD[(Long, Geometry)] = {
+      data.mapPartitions(iter => {
+        val WGS84 = 4326
+        val gf = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING), WGS84)
+        val wktreader = new WKTReader(gf)
 
-    def featureIdAndGeometry(data: RDD[(Array[String], Long)], num: Int): RDD[(Row, Geometry)] = {
-      // TODO: refactor using flatmap
-      val optgeom = data.map { case (wkts, id) =>
-        (Row(id), Try(wktreader.read(wkts(num))))
-      }
-
-      optgeom.filter {
-        case (id, optg) => optg.isSuccess
-      }.map {
-        case (id, optg) => (id, optg.get)
-      }
+        iter.flatMap { case (wkts, id) => Try((id, wktreader.read(wkts(num)))).toOption }
+      })
     }
 
     //load left dataset
@@ -185,8 +178,7 @@ object SpatialJoinApp {
     val matchedPairs: RDD[(Long, Long)] = {
       if (broadcastJoin) {
         BroadcastSpatialJoin(sc, leftGeometryById, rightGeometryById, joinPredicate, radius)
-            .map { case (leftRow, rightRow, leftGeom, rightGeom) =>
-              (leftRow.getLong(0), rightRow.getLong(0)) }
+            .map { case (left, right, _, _) => (left, right) }
       }
       else {
         //get extent that covers both datasets
@@ -219,9 +211,7 @@ object SpatialJoinApp {
             new FixedGridPartitionConf(dimX, dimY, new MBR(extent._1, extent._2, extent._3, extent._4))
         }
 
-        val leftGeomById = leftGeometryById.map { case (row, geom) => (row.getLong(0), geom)}
-        val rightGeomById = rightGeometryById.map { case (row, geom) => (row.getLong(0), geom)}
-        PartitionedSpatialJoin(sc, leftGeomById, rightGeomById, joinPredicate, radius, partConf)
+        PartitionedSpatialJoin(sc, leftGeometryById, rightGeometryById, joinPredicate, radius, partConf)
       }
     }
 

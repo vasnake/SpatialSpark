@@ -21,9 +21,8 @@ import com.vividsolutions.jts.index.strtree.{ItemBoundable, ItemDistance, STRtre
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
 import spatialspark.operator.SpatialOperator
-import spatialspark.join.broadcast.index._
+
 
 object BroadcastSpatialJoin {
 
@@ -122,7 +121,7 @@ object BroadcastSpatialJoin {
           val rightRecs = queryRtree[L, R](index, leftObj, leftGeom, joinPredicate, condition)
           // inner join
           rightRecs.map { case (rightObj, rightGeom) => (leftObj, rightObj, leftGeom, rightGeom) }
-          // TODO: left join
+          // TODO: left outer join
         }
   }
 
