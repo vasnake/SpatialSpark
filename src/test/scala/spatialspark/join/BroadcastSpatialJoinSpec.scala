@@ -42,3 +42,5 @@ class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with Spat
 
 //  override protected def withFixture(test: Any): Outcome = ???
 }
+
+// TODO: test all predicates, test WithinD variations, test app code
