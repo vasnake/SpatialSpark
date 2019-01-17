@@ -18,7 +18,6 @@ package spatialspark.join
 
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.Row
 import spatialspark.operator.SpatialOperator._
 
 class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with SpatialJoinBehaviors {
@@ -44,3 +43,13 @@ class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with Spat
 }
 
 // TODO: test all predicates, test WithinD variations, test app code
+/*
+java -cp \
+    target/scala-2.11/spatial-spark-assembly-1.1.2-SNAPSHOT.jar \
+    spatialspark.main.SpatialJoinApp \
+    --left data/point1k.tsv --geom_left 1 \
+    --right data/nycb.tsv --geom_right 0 \
+    --broadcast true \
+    --predicate within \
+    --output target/join_output
+ */
