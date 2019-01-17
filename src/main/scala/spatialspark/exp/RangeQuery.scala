@@ -117,7 +117,7 @@ object RangeQuery {
       }
 
       val index = getIndex
-      index.registerTempTable("index")
+      index.createOrReplaceTempView("index")
 
       def getParquetDF() = {
         try {
@@ -153,7 +153,7 @@ object RangeQuery {
       val inputData = getParquetDF
       inputData.createOrReplaceTempView("input")
 
-      val candidateDF = candidateDF0.explode('ids) {ids => ids.getAs[Seq[Long]](0).map(x => ID(x))} .select('id)
+      val candidateDF = candidateDF0.flatMap { case row => row.getAs[Seq[Long]](0).map(x => ID(x))} .select('id)
       candidateDF.createOrReplaceTempView("candidate")
 
       val joinResults = inputData.join(candidateDF, inputData("rid") === candidateDF("id"))

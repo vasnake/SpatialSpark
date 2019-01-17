@@ -6,3 +6,5 @@ assemblyMergeStrategy in assembly := {
     case n if n.contains("Log.class") => MergeStrategy.last
     case _ => MergeStrategy.first
 }
+
+test in assembly := {}
