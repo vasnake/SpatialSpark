@@ -8,10 +8,18 @@ val Version = "1.1.2-SNAPSHOT"
 val sparkVersion = "2.0.2"
 
 val jts = "com.vividsolutions" % "jts" % "1.13"
-val spark = "org.apache.spark" %% "spark-core" % sparkVersion % "provided"
-val sparkSQL = "org.apache.spark" %% "spark-sql" % sparkVersion % "provided"
+
+//val spark = "org.apache.spark" %% "spark-core" % sparkVersion % "provided"
+//val sparkSQL = "org.apache.spark" %% "spark-sql" % sparkVersion % "provided"
+val spark = "org.apache.spark" %% "spark-core" % sparkVersion
+val sparkSQL = "org.apache.spark" %% "spark-sql" % sparkVersion
+//val hadoop = "org.apache.hadoop" % "hadoop-common" % "2.7.7"
+
 val scalaTest = "org.scalatest" %% "scalatest" % "3.0.5" % "test"
 val sparkTestingBase = "com.holdenkarau" %% "spark-testing-base" % s"${sparkVersion}_0.11.0" % "test"
+
+assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = true, includeDependency = true)
+// assemblyPackageDependency + includeDependency=false makes 2 jars
 
 val buildSettings = Defaults.coreDefaultSettings ++ Seq(
   organization := Organization,
@@ -24,5 +32,5 @@ val buildSettings = Defaults.coreDefaultSettings ++ Seq(
 lazy val spatialSpark: Project = Project("spatial-spark", file("."))
     .settings(
       buildSettings ++ Seq(
-        libraryDependencies ++= Seq(jts, scalaTest, sparkTestingBase, spark, sparkSQL)
+          libraryDependencies ++= Seq(jts, scalaTest, sparkTestingBase, spark, sparkSQL)
       ))

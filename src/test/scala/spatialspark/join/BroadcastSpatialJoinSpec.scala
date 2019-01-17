@@ -44,12 +44,14 @@ class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with Spat
 
 // TODO: test all predicates, test WithinD variations, test app code
 /*
-java -cp \
-    target/scala-2.11/spatial-spark-assembly-1.1.2-SNAPSHOT.jar \
+java -Dspark.master=local[4] \
+    -cp target/scala-2.11/spatial-spark-assembly-1.1.2-SNAPSHOT.jar \
     spatialspark.main.SpatialJoinApp \
     --left data/point1k.tsv --geom_left 1 \
     --right data/nycb.tsv --geom_right 0 \
     --broadcast true \
     --predicate within \
-    --output target/join_output
+    --output target/join_output \
+    --partition 4 \
+    --num_output 1
  */

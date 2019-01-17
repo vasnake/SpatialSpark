@@ -119,6 +119,12 @@ object SpatialJoinApp {
     conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     conf.set("spark.kryo.registrator", "spatialspark.util.KyroRegistrator")
     val sc = new SparkContext(conf)
+
+    // hack: Exception in thread "main" java.io.IOException: No FileSystem for scheme: file
+    val hadoopConfig = sc.hadoopConfiguration
+    hadoopConfig.set("fs.hdfs.impl", classOf[org.apache.hadoop.hdfs.DistributedFileSystem].getName)
+    hadoopConfig.set("fs.file.impl", classOf[org.apache.hadoop.fs.LocalFileSystem].getName)
+
     val outFile = options.getOrElse('output, Nil).asInstanceOf[String]
     val rightFile = options.getOrElse('right, Nil).asInstanceOf[String]
     val rightGeometryIndex = options.getOrElse('geom_right, 0).asInstanceOf[Int]
@@ -215,16 +221,13 @@ object SpatialJoinApp {
       }
     }
 
-    println(matchedPairs.count())
+    println(matchedPairs.cache.count())
     val runtime = System.currentTimeMillis() - beginTime
     println("join time: " + runtime)
 
     //write back results
-    if (numOutputPart == 0)
-      matchedPairs.map(x => x._1 + SEPARATOR + x._2).saveAsTextFile(outFile)
-    else
-      matchedPairs.repartition(numOutputPart).map(x => x._1 + SEPARATOR + x._2).saveAsTextFile(outFile)
-
+    val out = if (numOutputPart == 0) matchedPairs else matchedPairs.repartition(numOutputPart)
+    out.map(x => x._1 + SEPARATOR + x._2).saveAsTextFile(outFile)
     //post-processing for gathering data using hashing join
   }
 }
