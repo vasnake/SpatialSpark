@@ -18,15 +18,19 @@ package spatialspark.main
 
 import com.vividsolutions.jts.io.{WKBReader, WKTReader}
 import com.vividsolutions.jts.geom.{Geometry, GeometryFactory, PrecisionModel}
+
 import spatialspark.operator.SpatialOperator
 import spatialspark.partition.bsp.BinarySplitPartitionConf
 import spatialspark.partition.fgp.FixedGridPartitionConf
 import spatialspark.partition.stp.SortTilePartitionConf
 import spatialspark.join.{BroadcastSpatialJoin, PartitionedSpatialJoin}
 import spatialspark.util.MBR
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.hadoop.fs.{FileSystem, Path}
 
+import scala.annotation.tailrec
 import scala.util.Try
 
 /**
@@ -67,69 +71,73 @@ object SpatialJoinApp {
                        --help
               """
 
-  def main(args: Array[String]) {
-    if (args.length == 0) println(usage)
-    val arglist = args.toList
-    type OptionMap = Map[Symbol, Any]
+  def pathExists(path: String, sc: SparkContext): Boolean = {
+    FileSystem.get(sc.hadoopConfiguration).exists(new Path(path))
+  }
 
-    def nextOption(map: OptionMap, list: List[String]): OptionMap = {
-      list match {
-        case Nil => map
-        case "--help" :: tail =>
-          println(usage)
-          sys.exit(0)
-        case "--left" :: value :: tail =>
-          nextOption(map ++ Map('left -> value), tail)
-        case "--geom_left" :: value :: tail =>
-          nextOption(map ++ Map('geom_left -> value.toInt), tail)
-        case "--geom_right" :: value :: tail =>
-          nextOption(map ++ Map('geom_right -> value.toInt), tail)
-        case "--right" :: value :: tail =>
-          nextOption(map ++ Map('right -> value), tail)
-        case "--broadcast" :: value :: tail =>
-          nextOption(map ++ Map('broadcast -> value.toBoolean), tail)
-        case "--predicate" :: value :: tail =>
-          nextOption(map ++ Map('predicate -> value), tail)
-        case "--distance" :: value :: tail =>
-          nextOption(map ++ Map('distance -> value.toDouble), tail)
-        case "--output" :: value :: tail =>
-          nextOption(map ++ Map('output -> value), tail)
-        case "--separator" :: value :: tail =>
-          nextOption(map = map ++ Map('separator -> value), list = tail)
-        case "--partition" :: value :: tail =>
-          nextOption(map = map ++ Map('partition -> value.toInt), list = tail)
-        case "--method" :: value :: tail =>
-          nextOption(map = map ++ Map('method -> value), list = tail)
-        case "--conf" :: value :: tail =>
-          nextOption(map = map ++ Map('conf -> value), list = tail)
-        case "--extent" :: value :: tail =>
-          nextOption(map = map ++ Map('extent -> value), list = tail)
-        case "--parallel_part" :: value :: tail =>
-          nextOption(map = map ++ Map('parallel_part -> value.toBoolean), list = tail)
-        case "--num_output" :: value :: tail =>
-          nextOption(map = map ++ Map('num_output -> value.toInt), list = tail)
-        case "--wkt" :: value :: tail =>
-          nextOption(map = map ++ Map('wkt -> value.toBoolean), list = tail)
-        case option :: tail => println("Unknown option " + option)
-          sys.exit(1)
-      }
+  type OptionMap = Map[Symbol, Any]
+  @tailrec
+  private def nextOption(map: OptionMap, list: List[String]): OptionMap = {
+    list match {
+      case Nil => map
+      case "--help" :: tail =>
+        println(usage)
+        sys.exit(0)
+      case "--left" :: value :: tail =>
+        nextOption(map ++ Map('left -> value), tail)
+      case "--geom_left" :: value :: tail =>
+        nextOption(map ++ Map('geom_left -> value.toInt), tail)
+      case "--geom_right" :: value :: tail =>
+        nextOption(map ++ Map('geom_right -> value.toInt), tail)
+      case "--right" :: value :: tail =>
+        nextOption(map ++ Map('right -> value), tail)
+      case "--broadcast" :: value :: tail =>
+        nextOption(map ++ Map('broadcast -> value.toBoolean), tail)
+      case "--predicate" :: value :: tail =>
+        nextOption(map ++ Map('predicate -> value), tail)
+      case "--distance" :: value :: tail =>
+        nextOption(map ++ Map('distance -> value.toDouble), tail)
+      case "--output" :: value :: tail =>
+        nextOption(map ++ Map('output -> value), tail)
+      case "--separator" :: value :: tail =>
+        nextOption(map = map ++ Map('separator -> value), list = tail)
+      case "--partition" :: value :: tail =>
+        nextOption(map = map ++ Map('partition -> value.toInt), list = tail)
+      case "--method" :: value :: tail =>
+        nextOption(map = map ++ Map('method -> value), list = tail)
+      case "--conf" :: value :: tail =>
+        nextOption(map = map ++ Map('conf -> value), list = tail)
+      case "--extent" :: value :: tail =>
+        nextOption(map = map ++ Map('extent -> value), list = tail)
+      case "--parallel_part" :: value :: tail =>
+        nextOption(map = map ++ Map('parallel_part -> value.toBoolean), list = tail)
+      case "--num_output" :: value :: tail =>
+        nextOption(map = map ++ Map('num_output -> value.toInt), list = tail)
+      case "--wkt" :: value :: tail =>
+        nextOption(map = map ++ Map('wkt -> value.toBoolean), list = tail)
+      case option :: tail => println("Unknown option " + option)
+        sys.exit(1)
     }
-    val options = nextOption(Map(), arglist)
+  }
+
+  def main(args: Array[String]) {
     val conf = new SparkConf().setAppName("Spatial Join App")
     conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     conf.set("spark.kryo.registrator", "spatialspark.util.KyroRegistrator")
     val sc = new SparkContext(conf)
+    // local app hack: Exception in thread "main" java.io.IOException: No FileSystem for scheme: file
+    sc.hadoopConfiguration.set("fs.file.impl", classOf[org.apache.hadoop.fs.LocalFileSystem].getName)
+    //hadoopConfig.set("fs.hdfs.impl", classOf[org.apache.hadoop.hdfs.DistributedFileSystem].getName)
 
-    // hack: Exception in thread "main" java.io.IOException: No FileSystem for scheme: file
-    val hadoopConfig = sc.hadoopConfiguration
-    hadoopConfig.set("fs.hdfs.impl", classOf[org.apache.hadoop.hdfs.DistributedFileSystem].getName)
-    hadoopConfig.set("fs.file.impl", classOf[org.apache.hadoop.fs.LocalFileSystem].getName)
+    // load app options
+    if (args.length == 0) println(usage)
+    val options = nextOption(Map(), args.toList)
 
-    val outFile = options.getOrElse('output, Nil).asInstanceOf[String]
     val rightFile = options.getOrElse('right, Nil).asInstanceOf[String]
     val rightGeometryIndex = options.getOrElse('geom_right, 0).asInstanceOf[Int]
     val leftFile = options.getOrElse('left, Nil).asInstanceOf[String]
     val leftGeometryIndex = options.getOrElse('geom_left, 0).asInstanceOf[Int]
+
     val predicate = options.getOrElse('predicate, Nil).asInstanceOf[String]
     val joinPredicate = predicate.toLowerCase match {
       case "within" => SpatialOperator.Within
@@ -144,6 +152,7 @@ object SpatialJoinApp {
       println("unsupported predicate: " + predicate)
       sys.exit(0)
     }
+
     val inputSeparator = options.getOrElse('separator, "tab").asInstanceOf[String].toUpperCase
     SEPARATOR = inputSeparator match {
       case "TAB" => TAB
@@ -151,6 +160,7 @@ object SpatialJoinApp {
       case "SPACE" => SPACE
       case _ => TAB //tab by default
     }
+
     val numPartitions = options.getOrElse('partition, 512).asInstanceOf[Int]
     val radius = options.getOrElse('distance, 0.0).asInstanceOf[Double]
     val broadcastJoin = options.getOrElse('broadcast, false).asInstanceOf[Boolean]
@@ -160,14 +170,17 @@ object SpatialJoinApp {
     val numOutputPart = options.getOrElse('num_output, 0).asInstanceOf[Int]
     val paralllelPartition = options.getOrElse('parallel_part, false).asInstanceOf[Boolean]
 
+    val outFile = options.getOrElse('output, Nil).asInstanceOf[String]
+    require(!pathExists(outFile, sc), s"output path exists already: '${outFile}'")
+
     val beginTime = System.currentTimeMillis()
 
     def featureIdAndGeometry(data: RDD[(Array[String], Long)], num: Int): RDD[(Long, Geometry)] = {
       data.mapPartitions(iter => {
         val WGS84 = 4326
         val gf = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING), WGS84)
+        // non-serializable wktreader
         val wktreader = new WKTReader(gf)
-
         iter.flatMap { case (wkts, id) => Try((id, wktreader.read(wkts(num)))).toOption }
       })
     }
@@ -221,9 +234,9 @@ object SpatialJoinApp {
       }
     }
 
-    println(matchedPairs.cache.count())
-    val runtime = System.currentTimeMillis() - beginTime
-    println("join time: " + runtime)
+    println(s"join time: ${System.currentTimeMillis() - beginTime}")
+    println(s"matched pairs: ${matchedPairs.cache.count()}")
+    println(s"join & count time: ${System.currentTimeMillis() - beginTime}")
 
     //write back results
     val out = if (numOutputPart == 0) matchedPairs else matchedPairs.repartition(numOutputPart)
