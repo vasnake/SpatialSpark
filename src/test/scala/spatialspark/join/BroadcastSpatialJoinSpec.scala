@@ -42,10 +42,10 @@ class BroadcastSpatialJoinSpec extends SparkSpec with GeometryFixtures with Spat
 //  override protected def withFixture(test: Any): Outcome = ???
 }
 
-// TODO: test all predicates, test WithinD variations, test app code
+// TODO: test all predicates, test WithinD variations, test standalone, test spark-submit
 /*
 java -Dspark.master=local[4] \
-    -cp target/scala-2.11/spatial-spark-assembly-1.1.2-SNAPSHOT.jar \
+    -cp standalone/target/scala-2.11/standalone-assembly-1.1.2-SNAPSHOT.jar \
     spatialspark.main.SpatialJoinApp \
     --left data/point1k.tsv --geom_left 1 \
     --right data/nycb.tsv --geom_right 0 \

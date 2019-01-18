@@ -22,44 +22,61 @@ val testDeps = Seq(
 )
 
 val buildSettings = Defaults.coreDefaultSettings ++ Seq(
-  organization := Organization,
-  version := Version,
-  scalaVersion := scalaV,
-  scalacOptions ++= Seq("-encoding", "UTF-8", "-unchecked", "-deprecation", "-feature")
+    organization := Organization,
+    version := Version,
+    scalaVersion := scalaV,
+    scalacOptions ++= Seq("-encoding", "UTF-8", "-unchecked", "-deprecation", "-feature"),
+    test in assembly := {}
 )
 
+// compile test package assembly
 lazy val `spatial-spark` = (project in file("."))
     .settings(
         buildSettings
             ++ Seq(
             libraryDependencies
                 ++= geoDeps
-//                ++ sparkDeps.map(d => d % "provided")
-                ++ sparkDeps
-                ++ testDeps.map(d => d % "test")
+                ++ sparkDeps.map(_ % "provided")
+                ++ testDeps.map(_ % "test")
         ))
+    .settings(
+        assemblyOption in assembly := (assemblyOption in assembly).value.copy(
+            includeScala = false, includeDependency = true
+        ),
+        assemblyMergeStrategy in assembly := {
+            case n if n.startsWith("META-INF") => MergeStrategy.discard
+            case n if n.contains("META-INF/MANIFEST.MF") => MergeStrategy.discard
+            case n if n.contains("commons-beanutils") => MergeStrategy.discard
+            case n if n.contains("Log$Logger.class") => MergeStrategy.last
+            case n if n.contains("Log.class") => MergeStrategy.last
+            case x =>
+                val oldStrategy = (assemblyMergeStrategy in assembly).value
+                oldStrategy(x) // MergeStrategy.deduplicate
+        }
+    )
+
+// sbt> standalone/assembly
+lazy val standalone = project.in(file("standalone"))
+    .settings(
+        buildSettings ++ Seq(
+            libraryDependencies ++= sparkDeps
+        ))
+    .settings(
+        assemblyOption in assembly := (assemblyOption in assembly).value.copy(
+            includeScala = true, includeDependency = true
+        ),
+        assemblyMergeStrategy in assembly := {
+            case n if n.startsWith("META-INF") => MergeStrategy.discard
+            case n if n.contains("META-INF/MANIFEST.MF") => MergeStrategy.discard
+            case n if n.contains("commons-beanutils") => MergeStrategy.discard
+            case n if n.contains("Log$Logger.class") => MergeStrategy.last
+            case n if n.contains("Log.class") => MergeStrategy.last
+            case _ => MergeStrategy.first
+        }
+    )
+    .dependsOn(`spatial-spark`)
 
 // for spark testing
 concurrentRestrictions in Global += Tags.limit(Tags.Test, 1)
 parallelExecution in Test := false
 fork := true
-
-// assembly
-assemblyMergeStrategy in assembly := {
-    case n if n.startsWith("META-INF") => MergeStrategy.discard
-    case n if n.contains("META-INF/MANIFEST.MF") => MergeStrategy.discard
-    case n if n.contains("commons-beanutils") => MergeStrategy.discard
-    case n if n.contains("Log$Logger.class") => MergeStrategy.last
-    case n if n.contains("Log.class") => MergeStrategy.last
-    //    case x =>
-    //        val oldStrategy = (assemblyMergeStrategy in assembly).value
-    //        oldStrategy(x) // MergeStrategy.deduplicate
-    case _ => MergeStrategy.first
-}
-
-test in assembly := {}
-
-assemblyOption in assembly := (assemblyOption in assembly).value.copy(
-    includeScala = true,
-    includeDependency = true)
-// assemblyPackageDependency + includeDependency=false makes 2 jars
