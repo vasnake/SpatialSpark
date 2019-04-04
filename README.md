@@ -37,7 +37,7 @@ To get jar for standalone app, simply use SBT:
 Then, you can run SpatialJoinApp on your local machine:
 
     java -Dspark.master=local[4] \
-        -cp standalone/target/scala-2.11/standalone-assembly-1.1.2-SNAPSHOT.jar \
+        -cp standalone/target/scala-2.11/standalone-assembly-1.1.2.jar \
         spatialspark.main.SpatialJoinApp \
         --left data/point1k.tsv --geom_left 1 \
         --right data/nycb.tsv --geom_right 0 \
@@ -56,7 +56,7 @@ Then, you can use `spark-submit` to submit a Spark job:
     spark/bin/spark-submit \
       --master spark://spark-master:7077 \
       --class spatialspark.main.SpatialJoinApp \
-      /app/scala-2.11/spatial-spark-assembly-1.1.2-SNAPSHOT.jar \
+      /app/scala-2.11/spatial-spark-assembly-1.1.2.jar \
       --left /data/point1k.tsv --geom_left 1 \
       --right /data/nycb.tsv --geom_right 0 \
       --output /app/join_output \

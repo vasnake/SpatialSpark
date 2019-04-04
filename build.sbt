@@ -1,5 +1,5 @@
 val Organization = "me.simin"
-val Version = "1.1.2-SNAPSHOT"
+val Version = "1.1.2"
 
 // TODO: Spark 2.4 version
 // Spark runs on Java 8+, Python 2.7+/3.4+ and R 3.1+. For the Scala API, Spark 2.4.0 uses Scala 2.11
@@ -29,7 +29,7 @@ val buildSettings = Defaults.coreDefaultSettings ++ Seq(
     test in assembly := {}
 )
 
-// compile test package assembly
+// assembly for spark-submit: compile test package assembly
 lazy val `spatial-spark` = (project in file("."))
     .settings(
         buildSettings
@@ -55,7 +55,7 @@ lazy val `spatial-spark` = (project in file("."))
         }
     )
 
-// sbt> standalone/assembly
+// assembly for running as local app: sbt> standalone/assembly
 lazy val standalone = project.in(file("standalone"))
     .settings(
         buildSettings ++ Seq(
