@@ -28,5 +28,8 @@ predicate, approximate distance in meters are used.
 ## [1.1.1-beta-SNAPSHOT] - 2017-03-07
 Fixing bugs, Spark 2.0.2, etc.
 
+## 1.0 - 2015-10-02
+Initial release
+
 [Unreleased]: https://github.com/vasnake/SpatialSpark/compare/f9f726df75fe8e6113692b923a5cc6751112a982...vasnake:broadcast-spatial-join
 [1.1.1-beta-SNAPSHOT]: https://github.com/vasnake/SpatialSpark/compare/1.0...f9f726df75fe8e6113692b923a5cc6751112a982
