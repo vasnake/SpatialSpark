@@ -11,7 +11,6 @@ spatial extension as well as a standalone application to process large scale spa
 
 SpatialSpark has been compiled and tested on Spark 2.0.2. For geometry operations and data structures for indexes, well known [JTS](http://www.vividsolutions.com/jts/JTSHome.htm) library is used.
 
-
 ## Usage 
 
 ### Library
@@ -29,11 +28,62 @@ SpatialSpark is published to Maven Central (including SNAPSHOT releases). Just u
 working in progress (preliminary implementation under `exp`)  
 
 ### Standalone Application
-If you want, you can also use few predefined Spark jobs. To get jar, simply use SBT:
+If you want, you can also use a few predefined Spark jobs.
+To get jar for standalone app, simply use SBT:
 
-    sbt assembly
+    sbt
+    sbt> standalone/assembly
 
-Then, you can use `spark-submit` to submit a Spark job.
+Then, you can run SpatialJoinApp on your local machine:
+
+    java -Dspark.master=local[4] \
+        -cp standalone/target/scala-2.11/standalone-assembly-1.1.2-SNAPSHOT.jar \
+        spatialspark.main.SpatialJoinApp \
+        --left data/point1k.tsv --geom_left 1 \
+        --right data/nycb.tsv --geom_right 0 \
+        --broadcast true \
+        --predicate within \
+        --output target/join_output \
+        --partition 4 \
+        --num_output 1
+
+Or, if you prefer to use `spark-submit`, build another jar:
+
+    sbt> assembly
+
+Then, you can use `spark-submit` to submit a Spark job:
+
+    spark/bin/spark-submit \
+      --master spark://spark-master:7077 \
+      --class spatialspark.main.SpatialJoinApp \
+      /app/scala-2.11/spatial-spark-assembly-1.1.2-SNAPSHOT.jar \
+      --left /data/point1k.tsv --geom_left 1 \
+      --right /data/nycb.tsv --geom_right 0 \
+      --output /app/join_output \
+      --broadcast true \
+      --predicate within \
+      --partition 4 \
+      --num_output 1
+
+You can use predefined Docker containers to run tests. Go to `docker` subdir and start a container:
+
+    docker$ sudo docker-compose up
+    sudo docker exec -it spark-worker-1 /bin/bash
+
+This should start a command shell where you can use `spark-submit` command.
+Try to run previously described job for example.
+
+A few useful snippets for container management:
+
+    sudo docker-compose down --volumes
+
+    # docker root problem workaround for generated files
+    docker$ setfacl -m "default:group::rwx" "../target/join_output"
+
+    # remove docker containers and images
+    sudo docker ps -q -a | xargs sudo docker stop
+    sudo docker ps -q -a | xargs sudo docker rm
+    sudo docker image rm $(sudo docker image ls -a -q)
 
 #### Spatial Join
 Run spatial join processing on two datasets with spatial information (in 
@@ -102,10 +152,7 @@ With created index, the range query can be performed very fast.
     --query 98500.0,181800.0,986000.0,182000.0 --use_index true
 
 ## Version history
-
-1.0 - 02/10/2015
-
-* Initial release
+[changelog](CHANGELOG.md)
 
 ## Future Work
 * Add tests
