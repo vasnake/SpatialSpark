@@ -1,5 +1,5 @@
 val Organization = "me.simin"
-val Version = "1.1.2"
+val Version = "1.1.3-SNAPSHOT"
 
 // TODO: Spark 2.4 version
 // Spark runs on Java 8+, Python 2.7+/3.4+ and R 3.1+. For the Scala API, Spark 2.4.0 uses Scala 2.11
