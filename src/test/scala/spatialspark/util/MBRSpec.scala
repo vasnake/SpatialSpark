@@ -16,8 +16,8 @@
 
 package spatialspark.util
 
-import com.vividsolutions.jts.geom.{Envelope, Geometry}
-import com.vividsolutions.jts.io.WKTReader
+import org.locationtech.jts.geom.{Envelope, Geometry}
+import org.locationtech.jts.io.WKTReader
 import org.scalatest.{Matchers, FlatSpec}
 
 class MBRSpec extends FlatSpec with Matchers {

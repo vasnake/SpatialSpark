@@ -17,7 +17,7 @@
 
 package spatialspark.exp
 
-import com.vividsolutions.jts.io.{WKBReader, WKTReader}
+import org.locationtech.jts.io.{WKBReader, WKTReader}
 import org.apache.spark.sql.{Row, SparkSession}
 import spatialspark.index.serial.RTree
 

@@ -17,8 +17,8 @@
 package spatialspark.util
 
 import com.esotericsoftware.kryo.Kryo
-import com.vividsolutions.jts.geom.Geometry
-import com.vividsolutions.jts.index.strtree.STRtree
+import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.index.strtree.STRtree
 import org.apache.spark.serializer.KryoRegistrator
 
 class KyroRegistrator extends KryoRegistrator {

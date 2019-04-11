@@ -15,8 +15,8 @@
  */
 package spatialspark.query
 
-import com.vividsolutions.jts.geom.Geometry
-import com.vividsolutions.jts.index.strtree.STRtree
+import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.index.strtree.STRtree
 import spatialspark.operator.SpatialOperator
 import spatialspark.operator.SpatialOperator._
 import org.apache.spark.SparkContext

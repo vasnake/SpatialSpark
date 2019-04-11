@@ -1,6 +1,6 @@
 package spatialspark.exp
 
-import com.vividsolutions.jts.io.WKTReader
+import org.locationtech.jts.io.WKTReader
 import org.apache.spark.sql.SparkSession
 import spatialspark.index.DistIndex
 
