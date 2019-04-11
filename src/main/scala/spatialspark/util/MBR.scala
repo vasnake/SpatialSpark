@@ -15,7 +15,7 @@
  */
 package spatialspark.util
 
-import com.vividsolutions.jts.geom.Envelope
+import org.locationtech.jts.geom.Envelope
 
 case class MBR(xmin: Double, ymin: Double, xmax: Double, ymax: Double) extends Serializable {
 

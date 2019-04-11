@@ -17,8 +17,8 @@
 
 package spatialspark.exp
 
-import com.vividsolutions.jts.geom.{Envelope, GeometryFactory}
-import com.vividsolutions.jts.io.WKTReader
+import org.locationtech.jts.geom.{Envelope, GeometryFactory}
+import org.locationtech.jts.io.WKTReader
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.{SparkConf, SparkContext}
 import spatialspark.index.serial.RTree

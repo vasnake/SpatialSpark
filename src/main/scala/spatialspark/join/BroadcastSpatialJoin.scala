@@ -16,8 +16,8 @@
 
 package spatialspark.join
 
-import com.vividsolutions.jts.geom.Geometry
-import com.vividsolutions.jts.index.strtree.{ItemBoundable, ItemDistance, STRtree}
+import org.locationtech.jts.geom.Geometry
+import org.locationtech.jts.index.strtree.{ItemBoundable, ItemDistance, STRtree}
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD

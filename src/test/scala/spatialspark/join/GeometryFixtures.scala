@@ -16,7 +16,7 @@
 
 package spatialspark.join
 
-import com.vividsolutions.jts.geom.{Coordinate, Geometry, GeometryFactory}
+import org.locationtech.jts.geom.{Coordinate, Geometry, GeometryFactory}
 import org.apache.spark.rdd.RDD
 
 
