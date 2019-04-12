@@ -135,7 +135,7 @@ object BroadcastSpatialJoin {
 
       // Extra 'condition' is not applied here; you shouldn't use 'condition' with NearestD predicate!
       case SpatialOperator.NearestD => if (index.value.size() > 0) {
-        val item = index.value.nearestNeighbour(queryBox, ((null, leftGeom), null), distanceFunc)
+        val item = index.value.nearestNeighbour(queryBox, (null, leftGeom, null), distanceFunc)
         result(Array(item))
       } else emptyResult
 
