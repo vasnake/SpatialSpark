@@ -46,27 +46,31 @@ object BroadcastSpatialJoin {
 
   /**
     * Inner join: for each record from left find all records in right, that satisfy
-    * 'condition' and 'joinPredicate'.
-    * Geometries should be Lon,Lat-based (WGS84).
+    * `condition` and `joinPredicate`.
+    * Geometries should be (Lon,Lat) based, in WGS84 model.
     *
-    * Two special cases: joinPredicate = WithinD or NearestD
+    * <p>We have two special cases: joinPredicate is `WithinD` or `NearestD` </p>
     *
-    *   NearestD: in this case 'condition' filter can't be used => you shouldn't
-    *   call join with both (spatial=NearestD and logical!=None) conditions.
+    *   <p>`NearestD`: in this case `condition` filter can't be used => you shouldn't
+    *   call join with both (spatial=NearestD and logical!=None) conditions.</p>
     *
-    *   WithinD: in this case you may have to apply after join more accurate filter
-    *   using geodetic distance implementation. Join uses JTS distance implementation,
+    *   <p>`WithinD`: in this case, after join you may have to apply more accurate filter
+    *   using geodetic distance implementation. Join uses `JTS` distance implementation,
     *   that don't work with Lon,Lat coordinates and for that reason
-    *   here we apply metre2degree conversion for 'radius' parameter,
-    *   and conversion result depends on geometry latitude.
+    *   here we have to apply `metre2degree` conversion for `radius` parameter,
+    *   and conversion result depends on geometry latitude.</p>
     *
     * @param sc context
     * @param left big dataset for iterate over (flatmap)
     * @param right small dataset, will be broadcasted
-    * @param joinPredicate spatial relation, one of (WithinD, Within, Contains, Intersects, Overlaps, NearestD).
-    *                      Relation will be queried in form: leftGeom.relate(rightGeom)
-    * @param radius distance in meters, used in WithinD relation: leftGeom.isWithinDistance(rightGeom, maxArcLen),
-    *               where maxArcLen is a arc len in degrees (WGS84 model) on a latitude of rightGeom.
+    * @param joinPredicate spatial relation, one of (
+    *                      `WithinD`, `Within`, `Contains`, `Intersects`, `Overlaps`, `NearestD`).
+    *                      Relation will be queried in form: `leftGeom.relate(rightGeom)`
+    * @param radius distance in meters, used in `WithinD` relation:
+    *               `leftGeom.isWithinDistance(rightGeom, maxArcLen)`,
+    *               where `maxArcLen` is an approximate arc len in degrees (WGS84 model) on a latitude of rightGeom.
+    * @param condition function that will be applied to each left row and each candidate to join from right row;
+    *                  candidat will be joined if `condition` is `true`
     * @tparam L type of left object
     * @tparam R type of right object
     * @return inner join result: (left, right, leftGeom, rightGeom)
