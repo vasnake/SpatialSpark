@@ -175,7 +175,57 @@ class BroadcastSpatialJoinTest extends
     noExtraCondition()
   }
 
-  // TODO: Intersects, Overlaps, NearestD
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "intersects"
+  it should "find intersects" in {
+    // input data
+    val left = sc.parallelize(parsePolylines(
+      """
+        |A: 1,1; 2,2
+        |B: 2,2; 3,3
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePolylines(
+      """
+        |a:  1,2; 2,1
+        |aa: 1,2; 2,1
+        |b:  2,3; 3,2
+        |bb: 2,3; 3,2
+      """.stripMargin))
+
+    // join params
+    val op = SpatialOperator.Intersects
+    val radius = 0d
+    val condition: Option[ConditionType] = Some(
+      (ls: String, rs: String) => ls.toLowerCase == rs.toLowerCase
+    )
+
+    // expected
+    val expected =
+      """
+        |A, a
+        |B, b
+      """.stripMargin
+
+    // test
+    BSJ(left, right, op, radius, condition) should contain theSameElementsAs parsePairs(expected)
+
+    def noExtraCondition() = {
+      val expected =
+        """
+          |A, a
+          |A, aa
+          |B, b
+          |B, bb
+        """.stripMargin
+
+      BSJ(left, right, op, radius) should contain theSameElementsAs parsePairs(expected)
+    }
+
+    noExtraCondition()
+  }
+
+  // TODO: Overlaps, NearestD
+
 }
 
 object BroadcastSpatialJoinTest {
@@ -186,6 +236,15 @@ object BroadcastSpatialJoinTest {
   type DataType = (String, Geometry)
   type ConditionType = (String, String) => Boolean
   type ResultNoGeomType = (String, String)
+
+  def parsePolylines(str: String): Seq[DataType] = {
+    // one line sample: `a:  1,1; 2,1; 2,2`
+    val seq: Seq[(String, Geometry)] = for {
+      Array(key, points) <- pairs(str)
+    } yield (key, polyline(points.splitTrim(";")))
+    //println(s"parsePolyline: \n\t${seq.mkString("\n\t")}")
+    seq
+  }
 
   def parsePolygons(str: String): Seq[DataType] = {
     // one line sample: `a:  1,1; 2,1; 2,2`
@@ -220,6 +279,14 @@ object BroadcastSpatialJoinTest {
   private val gf = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING), sridWGS84)
 
   implicit private def stringToSeparator(sep: String): Separators = Separators(sep)
+
+  private def polyline(points: Array[String]): Geometry = {
+    val coords = for {
+      Array(lon, lat) <- points.map(_.splitTrim(","))
+    } yield new Coordinate(lon.toDouble, lat.toDouble)
+
+    gf.createLineString(coords).asInstanceOf[Geometry]
+  }
 
   private def polygon(points: Array[String]): Geometry = {
     val xys = for {
