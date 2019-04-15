@@ -126,7 +126,56 @@ class BroadcastSpatialJoinTest extends
     noExtraCondition()
   }
 
-  // TODO: WithinD, Intersects, Overlaps, NearestD
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "within distance"
+  it should "find point within distance from poi" in {
+    // input data
+    val left = sc.parallelize(parsePoints(
+      """
+        |A: 1, 1
+        |B: 2, 2
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePoints(
+      """
+        |a:  1.1, 1.1   : 16 km to A
+        |aa: 1.2, 1.2   : 31 km to A
+        |b:  2.1, 2.1   : 16 km to B
+        |bb: 2.2, 2.2   : 31 km to B
+      """.stripMargin))
+
+    // join params
+    val op = SpatialOperator.WithinD
+    val radius = 31.5 * 1000d // 31.5 km
+    val condition: Option[ConditionType] = Some(
+      (ls: String, rs: String) => ls.toLowerCase == rs.toLowerCase
+    )
+
+    // expected
+    val expected =
+      """
+        |A, a
+        |B, b
+      """.stripMargin
+
+    // test
+    BSJ(left, right, op, radius, condition) should contain theSameElementsAs parsePairs(expected)
+
+    def noExtraCondition() = {
+      val expected =
+        """
+          |A, a
+          |A, aa
+          |B, b
+          |B, bb
+        """.stripMargin
+
+      BSJ(left, right, op, radius) should contain theSameElementsAs parsePairs(expected)
+    }
+
+    noExtraCondition()
+  }
+
+  // TODO: Intersects, Overlaps, NearestD
 }
 
 object BroadcastSpatialJoinTest {
@@ -188,12 +237,23 @@ object BroadcastSpatialJoinTest {
     case _ => throw new IllegalArgumentException(s"xy must be Array(x, y); got `$xy` instead")
   }
 
-  private def pairs(str: String, sep: String = ":") = str.splitTrim("\n").map(_.splitTrim(sep))
+  private def pairs(str: String, sep: String = ":") = str.splitTrim("\n")
+    .map(_.splitTrim(sep).take(2))
 
-  // check contains
-  def check(left: RDD[DataType], right: RDD[DataType]): Unit = for {
+  private def checkContains(left: RDD[DataType], right: RDD[DataType]): Unit = for {
     (areaKey, areaGeom) <- left.collect
     (pointKey, pointGeom) <- right.collect
   } if (areaGeom.contains(pointGeom)) println(s"area `$areaKey` contain point `$pointKey`")
 
+  private def checkDistance(left: RDD[DataType], right: RDD[DataType]): Unit = for {
+    (lKey, lGeom) <- left.collect
+    (rKey, rGeom) <- right.collect
+  } println(s"$lKey -> $rKey distance: ${math.round(distance(lGeom, rGeom) / 1000d)} km")
+
+  def distance(a: Geometry, b: Geometry): Double = {
+    import net.sf.geographiclib.Geodesic
+    val (p1, p2) = (a.getCentroid, b.getCentroid)
+    Geodesic.WGS84.Inverse(p1.getY, p1.getX, p2.getY, p2.getX)
+      .s12
+  }
 }

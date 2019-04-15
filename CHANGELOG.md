@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+Fixed some bugs, added tests, build Spark 2.4 + Scala 2.12 version.
 
 ### Added
 - BroadcastSpatialJoin tests
