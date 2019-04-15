@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- ???
+- BroadcastSpatialJoin tests
 
 ### Changed
 - version to 1.1.3-SNAPSHOT
