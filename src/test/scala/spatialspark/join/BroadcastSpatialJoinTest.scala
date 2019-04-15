@@ -71,13 +71,62 @@ class BroadcastSpatialJoinTest extends
           |bb, B
         """.stripMargin
 
-      BSJ(left, right, op, radius) should contain theSameElementsAs parsePairs(expected)
+      BSJ(left, right, op) should contain theSameElementsAs parsePairs(expected)
     }
 
     noExtraCondition()
   }
 
-  // TODO: Within, WithinD, Intersects, Overlaps, NearestD
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "within"
+  it should "find point within polygon" in {
+    // input data
+    val left = sc.parallelize(parsePoints(
+      """
+        |A: 1.5, 1.3
+        |B: 1.3, 1.5
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePolygons(
+      """
+        |a:  1,1; 2,1; 2,2
+        |aa: 1,1; 2,1; 2,2
+        |b:  1,1; 2,2; 1,2
+        |bb: 1,1; 2,2; 1,2
+      """.stripMargin))
+
+    // join params
+    val op = SpatialOperator.Within
+    val radius = 0d
+    val condition: Option[ConditionType] = Some(
+      (ls: String, rs: String) => ls.toLowerCase == rs.toLowerCase
+    )
+
+    // expected
+    val expected =
+      """
+        |A, a
+        |B, b
+      """.stripMargin
+
+    // test
+    BSJ(left, right, op, radius, condition) should contain theSameElementsAs parsePairs(expected)
+
+    def noExtraCondition() = {
+      val expected =
+        """
+          |A, a
+          |A, aa
+          |B, b
+          |B, bb
+        """.stripMargin
+
+      BSJ(left, right, op) should contain theSameElementsAs parsePairs(expected)
+    }
+
+    noExtraCondition()
+  }
+
+  // TODO: WithinD, Intersects, Overlaps, NearestD
 }
 
 object BroadcastSpatialJoinTest {
@@ -118,8 +167,8 @@ object BroadcastSpatialJoinTest {
     seq
   }
 
-  val sridWGS84 = 4326
-  val gf = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING), sridWGS84)
+  private val sridWGS84 = 4326
+  private val gf = new GeometryFactory(new PrecisionModel(PrecisionModel.FLOATING), sridWGS84)
 
   implicit private def stringToSeparator(sep: String): Separators = Separators(sep)
 
