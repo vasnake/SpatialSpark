@@ -273,8 +273,8 @@ class BroadcastSpatialJoinTest extends
     noExtraCondition()
   }
 
-  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "nearest point"
-  it should "find nearest point" in {
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "nearest"
+  it should "find nearest points" in {
     // input data
     val left = sc.parallelize(parsePoints(
       """
@@ -320,6 +320,44 @@ class BroadcastSpatialJoinTest extends
     noExtraCondition()
   }
 
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "different types"
+  it should "check condition with different types" in {
+    // input data
+    val left = sc.parallelize(parsePoints(
+      """
+        |A:   1, 1
+        |B:  10, 10
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePoints(
+      """
+        |65:   2, 2
+        |5 :   2, 1.9
+        |66:  11, 11
+        |6 :  11, 10.9
+      """.stripMargin)).map { case (k, g) => (k.toInt, g)}
+
+    // join params
+    val op = SpatialOperator.NearestD
+    val radius = 0d
+    val condition = Some(
+      (lo: String, ro: Int) => lo.head.toInt == ro
+    )
+
+    // expected
+    val expected =
+      """
+        |A, 65
+        |B, 66
+      """.stripMargin
+
+    // test
+    BroadcastSpatialJoin(sc, left, right, op, radius, condition)
+      .map{ case (ls, rs, _, _) => (ls, rs.toString) }
+      .collect should contain theSameElementsAs parsePairs(expected)
+  }
+
+  // TODO: distance on high latitude
 }
 
 object BroadcastSpatialJoinTest {
@@ -331,6 +369,9 @@ object BroadcastSpatialJoinTest {
   type ConditionType = (String, String) => Boolean
   type ResultNoGeomType = (String, String)
 
+  /**
+    * Parse lines like `"a:  1,1; 2,1; 2,2"` into (str, polyline) pairs
+    */
   def parsePolylines(str: String): Seq[DataType] = {
     // one line sample: `a:  1,1; 2,1; 2,2`
     val seq: Seq[(String, Geometry)] = for {
@@ -340,6 +381,9 @@ object BroadcastSpatialJoinTest {
     seq
   }
 
+  /**
+    * Parse lines like `"a:  1,1; 2,1; 2,2"` into (str, polygon) pairs
+    */
   def parsePolygons(str: String): Seq[DataType] = {
     // one line sample: `a:  1,1; 2,1; 2,2`
     val seq: Seq[(String, Geometry)] = for {
@@ -349,6 +393,10 @@ object BroadcastSpatialJoinTest {
     seq
   }
 
+  /**
+    * Split `str` by `"\n"`, each line split by `":"`, take first two items;
+    * second item split by `","` and make a Point geometry from (x,y) pair
+    */
   def parsePoints(str: String): Seq[DataType] = {
     // one line sample: `A: 1.5, 1.3`
     val seq: Seq[(String, Geometry)] = {
@@ -360,6 +408,9 @@ object BroadcastSpatialJoinTest {
     seq
   }
 
+  /**
+    * Split `str` by `"\n"`, each line split by `","` and take first 2 items
+    */
   def parsePairs(str: String): Seq[ResultNoGeomType] = {
     // one line sample: `a, A`
     val seq: Seq[(String, String)] = for {
@@ -379,7 +430,7 @@ object BroadcastSpatialJoinTest {
       Array(lon, lat) <- points.map(_.splitTrim(","))
     } yield new Coordinate(lon.toDouble, lat.toDouble)
 
-    gf.createLineString(coords).asInstanceOf[Geometry]
+    gf.createLineString(coords)
   }
 
   private def polygon(points: Array[String]): Geometry = {
@@ -390,7 +441,7 @@ object BroadcastSpatialJoinTest {
     val coords: Array[Coordinate] = (xys :+ xys.head) map { case (x, y) =>
       new Coordinate(x.toDouble, y.toDouble) }
 
-    gf.createPolygon(coords).asInstanceOf[Geometry]
+    gf.createPolygon(coords)
   }
 
   private def point(xy: Array[String]): Geometry = xy match {
@@ -411,6 +462,9 @@ object BroadcastSpatialJoinTest {
     (rKey, rGeom) <- right.collect
   } println(s"$lKey -> $rKey distance: ${math.round(distance(lGeom, rGeom) / 1000d)} km")
 
+  /**
+    * Geodetic distance between centroids
+    */
   def distance(a: Geometry, b: Geometry): Double = {
     import net.sf.geographiclib.Geodesic
     val (p1, p2) = (a.getCentroid, b.getCentroid)

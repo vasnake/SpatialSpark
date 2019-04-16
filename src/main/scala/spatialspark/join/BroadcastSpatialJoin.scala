@@ -31,7 +31,7 @@ object BroadcastSpatialJoin {
   // Sometimes, using key[Long] you need to make a second join, to select
   // additional columns for resulting dataset. Using arbitrary object (e.g. Row)
   // it's possible to eliminate secondary join. Also, it's possible to filter data before
-  // spatial predicate application, using condition(leftObject, rightObject): Boolean
+  // spatial predicate application, using condition(leftObject, rightObject) => Boolean
 
   // Why do we need Geometry objects in join result?
   //  You may want to apply more accurate filters after join, based on geometry objects.
@@ -43,19 +43,17 @@ object BroadcastSpatialJoin {
   // TODO: add possibility to choose, WGS84 or Eucledian coords.
   // TODO: add join type option, 'inner', 'left-outer' .
   // TODO: add projection operator, possibility to define result columns.
+  // TODO: extra condition type: ((L, Geom), (R, Geom)) => Boolean
 
   /**
     * Inner join: for each record from left find all records in right, that satisfy
     * `condition` and `joinPredicate`.
     * Geometries should be (Lon,Lat) based, in WGS84 model.
     *
-    * <p>We have two special cases: joinPredicate is `WithinD` or `NearestD` </p>
+    * <p>We have one special case: joinPredicate is `WithinD` :</p>
     *
-    *   <p>`NearestD`: in this case `condition` filter can't be used => you shouldn't
-    *   call join with both (spatial=NearestD and logical!=None) conditions.</p>
-    *
-    *   <p>`WithinD`: in this case, after join you may have to apply more accurate filter
-    *   using geodetic distance implementation. Join uses `JTS` distance implementation,
+    *   <p>in this case, after join you may have to apply more accurate filter
+    *   using geodetic distance implementation. Join uses JTS distance implementation,
     *   that don't work with Lon,Lat coordinates and for that reason
     *   here we have to apply `metre2degree` conversion for `radius` parameter,
     *   and conversion result depends on geometry latitude.</p>
@@ -69,8 +67,8 @@ object BroadcastSpatialJoin {
     * @param radius distance in meters, used in `WithinD` relation:
     *               `leftGeom.isWithinDistance(rightGeom, maxArcLen)`,
     *               where `maxArcLen` is an approximate arc len in degrees (WGS84 model) on a latitude of rightGeom.
-    * @param condition function that will be applied to each left row and each candidate to join from right row;
-    *                  candidat will be joined if `condition` is `true`
+    * @param condition function that will be applied to each left row and each candidate to join from right dataset;
+    *                  candidate will be joined if `condition` is `true` and geometries satisfy the `joinPredicate`.
     * @tparam L type of left object
     * @tparam R type of right object
     * @return inner join result: (left, right, leftGeom, rightGeom)
@@ -83,7 +81,7 @@ object BroadcastSpatialJoin {
                   condition: Option[(L, R) => Boolean] = None
                  ): RDD[(L, R, Geometry, Geometry)] = {
 
-    // create ST-R-tree on right dataset
+    // create ST-R-tree index on right dataset
     val index = sc.broadcast(buildIndex[R](right, radius))
 
     // add extra condition to `nearest` metric computations
@@ -164,6 +162,15 @@ object BroadcastSpatialJoin {
   // WithinD predicate implementation details
   private def itemDistance(item: AnyRef) = item.asInstanceOf[(_, _, Double)]._3
 
+    /**
+    * Distance(g1, g2) implementation for NearestD predicate processing.
+    * JTS Geometry.distance have two main disadvantages:
+    *   <li>it's slow O(n*n);</li>
+    *   <li>it's Eucledian and don't work with WGS84 Lon,Lat coordinates properly.</li>
+    * But, it also have a huge advantage: you don't need to implement
+    * fast and accurate distance(g1, g2), because it fast enough for simple geometries
+    * and for NearestD predicate we need only relative distance between pairs of objects.
+    */
   class ItemDistanceImpl extends
     ItemDistance with Serializable {
 
@@ -173,6 +180,14 @@ object BroadcastSpatialJoin {
     protected def geom(obj: ItemBoundable): Geometry = itemGeometry(obj.getItem)
   }
 
+  /**
+    * Distance(obj1, obj2) implementation for NearestD predicate with extra condition.
+    * Extra condition is a function that check objects attributes and make a decision:
+    * objects pair is good to consider a distance between them or we must skip this pair.
+    * @param predicate extra condition function
+    * @tparam L left object type
+    * @tparam R right object type
+    */
   class ItemDistanceWithConditionImpl[L, R](predicate: (L, R) => Boolean) extends
     ItemDistanceImpl with Serializable {
 
@@ -180,40 +195,15 @@ object BroadcastSpatialJoin {
       // left passed as item2; right (from index) passed as item1
       val left = obj[L](item2)
       val right = obj[R](item1)
-      val p = predicate(left, right)
-      println(s"distance, left: $left; right: $right; predicate: $p;")
+      //val p = predicate(left, right)
+      //println(s"ItemDistanceWithConditionImpl; left: $left; right: $right; predicate: $p;")
 
-      if (p) super.distance(item1, item2)
+      if (predicate(left, right)) super.distance(item1, item2)
       else Double.MaxValue
     }
 
     private def obj[T](o: ItemBoundable) = itemObject[T](o.getItem)
   }
-
-  /**
-    * Distance(g1, g2) implementation for NearestD predicate processing.
-    * JTS Geometry.distance have two main disadvantages:
-    *   it's slow O(n*n);
-    *   it's Eucledian and don't work with WGS84 Lon,Lat coordinates properly.
-    * But, it also have a huge advantage: you don't need to implement
-    * fast and accurate distance(g1, g2), because it fast enough for simple geometries
-    * and for NearestD predicate we need only relative distance between pairs of objects.
-    *
-    * @param geom function, selector for accessing Geometry object in ItemBoundable
-    */
-  //class STRTreeItemDistanceImpl(geom: ItemBoundable => Geometry)
-  //    extends ItemDistance with Serializable {
-  //
-  //  override def distance(item1: ItemBoundable, item2: ItemBoundable): Double =
-  //    geom(item1).distance(geom(item2))
-  //}
-
-  /**
-    * Distance function instance for NearestD predicate
-    */
-  //private val distanceFunc = new STRTreeItemDistanceImpl(
-  //  item => itemGeometry(item.getItem)
-  //)
 
   private def buildIndex[T](rdd: RDD[(T, Geometry)], maxDistance: Double) = {
     val strtree = new STRtree()
@@ -221,12 +211,14 @@ object BroadcastSpatialJoin {
     rdd
         .filter { case (_, geom) => geom != null }
         .map { case (obj, geom) => {
-          // will be expanded if maxDistance != 0, for WithinD predicate
+          // envelope will be expanded if maxDistance != 0; use it with WithinD predicate
           val envelope = geom.getEnvelopeInternal
 
-          // Why do we need variable degree distance?
+          // Why do we need variable distance?
+          // Because assumption is that we use WGS84 (Lon,Lat) coords, but we use meters
+          // for radius/distance metric.
           // JTS distance work with Eucledian coords, but we are using Lon,Lat =>
-          // distance in degrees different for different latitude for same distance in metres.
+          // distance in degrees is different for different latitude for same distance in metres.
           val maxDegrees: Double = if (maxDistance != 0) {
             val deg = metre2degree(maxDistance, envelope.centre.y)
             envelope.expandBy(deg)
