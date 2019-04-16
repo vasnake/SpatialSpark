@@ -129,7 +129,7 @@ object BroadcastSpatialJoin {
         leftGeom.isWithinDistance(itemGeometry(f), itemDistance(f))))
 
       case SpatialOperator.Within => filterCandidates(leftGeom.within)
-      case SpatialOperator.Contains => filterCandidates(leftGeom.contains)
+      case SpatialOperator.Contains => filterCandidates(leftGeom.contains) // ?covers?
       case SpatialOperator.Intersects => filterCandidates(leftGeom.intersects)
       case SpatialOperator.Overlaps => filterCandidates(leftGeom.overlaps)
 

@@ -224,7 +224,56 @@ class BroadcastSpatialJoinTest extends
     noExtraCondition()
   }
 
-  // TODO: Overlaps, NearestD
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "overlaps"
+  it should "find overlaps" in {
+    // input data (of equal dimentions)
+    val left = sc.parallelize(parsePolygons(
+      """
+        |A:  2,4;  2,2;  4,2
+        |B: 12,4; 12,2; 14,2
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePolygons(
+      """
+        |a:   3,1;  3,3;  1,3
+        |aa:  3,1;  3,3;  1,3
+        |b:  13,1; 13,3; 11,3
+        |bb: 13,1; 13,3; 11,3
+      """.stripMargin))
+
+    // join params
+    val op = SpatialOperator.Overlaps
+    val radius = 0d
+    val condition: Option[ConditionType] = Some(
+      (ls: String, rs: String) => ls.toLowerCase == rs.toLowerCase
+    )
+
+    // expected
+    val expected =
+      """
+        |A, a
+        |B, b
+      """.stripMargin
+
+    // test
+    BSJ(left, right, op, radius, condition) should contain theSameElementsAs parsePairs(expected)
+
+    def noExtraCondition() = {
+      val expected =
+        """
+          |A, a
+          |A, aa
+          |B, b
+          |B, bb
+        """.stripMargin
+
+      BSJ(left, right, op, radius) should contain theSameElementsAs parsePairs(expected)
+    }
+
+    noExtraCondition()
+  }
+
+  // TODO: NearestD
 
 }
 
@@ -242,7 +291,7 @@ object BroadcastSpatialJoinTest {
     val seq: Seq[(String, Geometry)] = for {
       Array(key, points) <- pairs(str)
     } yield (key, polyline(points.splitTrim(";")))
-    //println(s"parsePolyline: \n\t${seq.mkString("\n\t")}")
+    //println(s"parsePolyline ${seq.head._2.getDimension}: \n\t${seq.mkString("\n\t")}")
     seq
   }
 
@@ -251,7 +300,7 @@ object BroadcastSpatialJoinTest {
     val seq: Seq[(String, Geometry)] = for {
       Array(key, points) <- pairs(str)
     } yield (key, polygon(points.splitTrim(";")))
-    //println(s"parsePolygon: \n\t${seq.mkString("\n\t")}")
+    //println(s"parsePolygon ${seq.head._2.getDimension}: \n\t${seq.mkString("\n\t")}")
     seq
   }
 
