@@ -20,7 +20,8 @@ val sparkDeps = Seq(
 
 val testDeps = Seq(
     "org.scalatest" %% "scalatest" % "3.0.5",
-    "com.holdenkarau" %% "spark-testing-base" % "2.4.0_0.11.0"
+    "com.holdenkarau" %% "spark-testing-base" % "2.4.0_0.11.0",
+    "net.sf.geographiclib" % "GeographicLib-Java" % "1.49"
     //"com.holdenkarau" %% "spark-testing-base" % s"${SparkVersion}_0.11.0"
 )
 

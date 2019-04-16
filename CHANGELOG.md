@@ -1,18 +1,20 @@
 # Changelog
 
 ## [Unreleased]
+Fixed some bugs, added tests, build Spark 2.4 + Scala 2.12 version.
 
 ### Added
-- ???
+- BroadcastSpatialJoin tests
 
 ### Changed
 - version to 1.1.3-SNAPSHOT
+- Scala 2.12, Spark 2.4, JTS from locationtech v1.16
 
 ### Fixed
-- ???
+- tuple structure bug in `NearestD` case
 
 ### Removed
-- ???
+- limitation that don't allow to use extra condition with `NearestD` predicate
 
 ### Deprecated
 - ???
