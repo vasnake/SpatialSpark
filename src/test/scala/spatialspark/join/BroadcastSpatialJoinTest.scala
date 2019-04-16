@@ -273,7 +273,54 @@ class BroadcastSpatialJoinTest extends
     noExtraCondition()
   }
 
-  // TODO: NearestD
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "nearest point"
+  it should "find nearest point" in {
+    // input data
+    val left = sc.parallelize(parsePoints(
+      """
+        |A:   1, 1
+        |B:  10, 10
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePoints(
+      """
+        |a:   2, 2
+        |aa:  2, 1.9
+        |b:  11, 11
+        |bb: 11, 10.9
+      """.stripMargin))
+
+    // join params
+    val op = SpatialOperator.NearestD
+    val radius = 0d
+    val condition: Option[ConditionType] = Some(
+      (ls: String, rs: String) => ls.toLowerCase == rs.toLowerCase
+    )
+
+    // expected
+    val expected =
+      """
+        |A, a
+        |B, b
+      """.stripMargin
+
+    // test
+    BSJ(left, right, op, radius, condition) should contain theSameElementsAs parsePairs(expected)
+
+    def noExtraCondition() = {
+      val expected =
+        """
+          |A, a
+          |A, aa
+          |B, b
+          |B, bb
+        """.stripMargin
+
+      BSJ(left, right, op, radius) should contain theSameElementsAs parsePairs(expected)
+    }
+
+    noExtraCondition()
+  }
 
 }
 
