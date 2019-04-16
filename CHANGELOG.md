@@ -11,10 +11,10 @@ Fixed some bugs, added tests, build Spark 2.4 + Scala 2.12 version.
 - Scala 2.12, Spark 2.4, JTS from locationtech v1.16
 
 ### Fixed
-- tuple structure bug in NearestD case
+- tuple structure bug in `NearestD` case
 
 ### Removed
-- ???
+- limitation that don't allow to use extra condition with `NearestD` predicate
 
 ### Deprecated
 - ???

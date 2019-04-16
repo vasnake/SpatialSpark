@@ -357,7 +357,47 @@ class BroadcastSpatialJoinTest extends
       .collect should contain theSameElementsAs parsePairs(expected)
   }
 
-  // TODO: distance on high latitude
+  // testOnly spatialspark.join.BroadcastSpatialJoinTest -- -z "high latitude"
+  it should "find point within distance on high latitude" in {
+    // input data
+    val left = sc.parallelize(parsePoints(
+      """
+        |A: 70, 70
+        |B: 71, 71
+      """.stripMargin))
+
+    val right = sc.parallelize(parsePoints(
+      """
+        |a:  70.1, 70.1   : 12 km to A
+        |aa: 70.2, 70.2   : 24 km to A
+        |b:  71.1, 71.1   : 12 km to B
+        |bb: 71.2, 71.2   : 23 km to B
+      """.stripMargin))
+
+    //def check(left: RDD[DataType], right: RDD[DataType]): Unit = for {
+    //  (lKey, lGeom) <- left.collect
+    //  (rKey, rGeom) <- right.collect
+    //} println(s"$lKey -> $rKey distance: ${math.round(distance(lGeom, rGeom) / 1000d)} km")
+    //check(left, right)
+
+    // join params
+    val op = SpatialOperator.WithinD
+    val condition: Option[ConditionType] = None
+
+    // you definetely want a post-join filter for geometries on high latitude!
+    // if you set radius to 12 km, you will get `aa` and `bb` points
+    val radius = 6 * 1000d // 6 km
+
+    // test
+    val expected =
+      """
+        |A, a
+        |B, b
+      """.stripMargin
+
+    BSJ(left, right, op, radius) should contain theSameElementsAs parsePairs(expected)
+  }
+
 }
 
 object BroadcastSpatialJoinTest {
