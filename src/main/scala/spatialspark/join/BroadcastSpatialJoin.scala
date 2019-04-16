@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Simin You
+ * Copyright 2015 Simin You (2017 Valentin Fedulov)
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -86,14 +86,22 @@ object BroadcastSpatialJoin {
     // create ST-R-tree on right dataset
     val index = sc.broadcast(buildIndex[R](right, radius))
 
+    // add extra condition to `nearest` metric computations
+    val nearestMetric = condition match {
+      case None => new ItemDistanceImpl
+      case Some(predicate) => new ItemDistanceWithConditionImpl(predicate)
+    }
+
     left
-        .filter(r => r._2 != null)
+        .filter(r => r._2 != null) // geometry may be null
         .flatMap { case (leftObj, leftGeom) => {
-          val rightRecs = queryRtree[L, R](index, leftObj, leftGeom, joinPredicate, condition)
+          val rightRecs = queryRtree[L, R](
+            index, leftObj, leftGeom, joinPredicate, condition, nearestMetric
+          )
 
           // inner join
           rightRecs.map { case (rightObj, rightGeom) => (leftObj, rightObj, leftGeom, rightGeom) }
-          // TODO: left outer join
+          // TODO: left outer join?
         }}
   }
 
@@ -102,7 +110,8 @@ object BroadcastSpatialJoin {
                        leftObj: L,
                        leftGeom: Geometry,
                        predicate: SpatialOperator.SpatialOperator,
-                       condition: Option[(L, R) => Boolean]
+                       condition: Option[(L, R) => Boolean],
+                       nearestMetric: ItemDistance
                       ): Array[(R, Geometry)] = {
 
     val queryBox = leftGeom.getEnvelopeInternal
@@ -121,6 +130,12 @@ object BroadcastSpatialJoin {
     def filterCandidates(leftRelRight: Geometry => Boolean) =
       result(candidates.filter(f => leftRelRight(itemGeometry(f))))
 
+    def nearest = index.value.nearestNeighbour(
+      queryBox,
+      makeItem(leftObj, leftGeom, 0d),
+      nearestMetric
+    )
+
     predicate match {
       // Why do we need variable itemDistance instead of const radius?
       // JTS distance work with Eucledian coords, but we are using Lon,Lat =>
@@ -133,10 +148,8 @@ object BroadcastSpatialJoin {
       case SpatialOperator.Intersects => filterCandidates(leftGeom.intersects)
       case SpatialOperator.Overlaps => filterCandidates(leftGeom.overlaps)
 
-      // Extra 'condition' is not applied here; you shouldn't use 'condition' with NearestD predicate!
       case SpatialOperator.NearestD => if (index.value.size() > 0) {
-        val item = index.value.nearestNeighbour(queryBox, (null, leftGeom, null), distanceFunc)
-        result(Array(item))
+        result(Array(nearest))
       } else emptyResult
 
       // unknown predicate
@@ -151,6 +164,32 @@ object BroadcastSpatialJoin {
   // WithinD predicate implementation details
   private def itemDistance(item: AnyRef) = item.asInstanceOf[(_, _, Double)]._3
 
+  class ItemDistanceImpl extends
+    ItemDistance with Serializable {
+
+    override def distance(item1: ItemBoundable, item2: ItemBoundable): Double =
+      geom(item1).distance(geom(item2))
+
+    protected def geom(obj: ItemBoundable): Geometry = itemGeometry(obj.getItem)
+  }
+
+  class ItemDistanceWithConditionImpl[L, R](predicate: (L, R) => Boolean) extends
+    ItemDistanceImpl with Serializable {
+
+    override def distance(item1: ItemBoundable, item2: ItemBoundable): Double = {
+      // left passed as item2; right (from index) passed as item1
+      val left = obj[L](item2)
+      val right = obj[R](item1)
+      val p = predicate(left, right)
+      println(s"distance, left: $left; right: $right; predicate: $p;")
+
+      if (p) super.distance(item1, item2)
+      else Double.MaxValue
+    }
+
+    private def obj[T](o: ItemBoundable) = itemObject[T](o.getItem)
+  }
+
   /**
     * Distance(g1, g2) implementation for NearestD predicate processing.
     * JTS Geometry.distance have two main disadvantages:
@@ -162,19 +201,19 @@ object BroadcastSpatialJoin {
     *
     * @param geom function, selector for accessing Geometry object in ItemBoundable
     */
-  class STRTreeItemDistanceImpl(geom: ItemBoundable => Geometry)
-      extends ItemDistance with Serializable {
-
-    override def distance(item1: ItemBoundable, item2: ItemBoundable): Double =
-      geom(item1).distance(geom(item2))
-  }
+  //class STRTreeItemDistanceImpl(geom: ItemBoundable => Geometry)
+  //    extends ItemDistance with Serializable {
+  //
+  //  override def distance(item1: ItemBoundable, item2: ItemBoundable): Double =
+  //    geom(item1).distance(geom(item2))
+  //}
 
   /**
     * Distance function instance for NearestD predicate
     */
-  private val distanceFunc = new STRTreeItemDistanceImpl(
-    item => itemGeometry(item.getItem)
-  )
+  //private val distanceFunc = new STRTreeItemDistanceImpl(
+  //  item => itemGeometry(item.getItem)
+  //)
 
   private def buildIndex[T](rdd: RDD[(T, Geometry)], maxDistance: Double) = {
     val strtree = new STRtree()

@@ -310,9 +310,7 @@ class BroadcastSpatialJoinTest extends
     def noExtraCondition() = {
       val expected =
         """
-          |A, a
           |A, aa
-          |B, b
           |B, bb
         """.stripMargin
 
