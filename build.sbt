@@ -1,15 +1,10 @@
 val Organization = "me.simin"
-val Version = "1.1.3-SNAPSHOT"
-
-//val sparkVersion = "2.0.2"
-//val scalaV = "2.11.12"
+val Version = "1.2.1"
 
 val ScalaVersion = "2.12.8"
 val SparkVersion = "2.4.1"
 
 val geoDeps = Seq(
-  //"com.vividsolutions" % "jts" % "1.13"
-  // https://github.com/locationtech/jts/blob/master/MIGRATION.md
   "org.locationtech.jts" % "jts-core" % "1.16.1"
 )
 
@@ -20,9 +15,10 @@ val sparkDeps = Seq(
 
 val testDeps = Seq(
     "org.scalatest" %% "scalatest" % "3.0.5",
-    "com.holdenkarau" %% "spark-testing-base" % "2.4.0_0.11.0",
-    "net.sf.geographiclib" % "GeographicLib-Java" % "1.49"
-    //"com.holdenkarau" %% "spark-testing-base" % s"${SparkVersion}_0.11.0"
+    "net.sf.geographiclib" % "GeographicLib-Java" % "1.49",
+    // not ready yet: unresolved dependency: com.holdenkarau#spark-testing-base_2.12;2.4.0_0.11.0
+    // use local lib (sbt +package) from https://github.com/vasnake/spark-testing-base
+    "com.holdenkarau" %% "spark-testing-base" % "2.4.0_0.11.0"
 )
 
 val buildSettings = Defaults.coreDefaultSettings ++ Seq(
