@@ -16,8 +16,8 @@
 
 package spatialspark.join
 
-import com.vividsolutions.jts.geom.{Envelope, Geometry}
-import com.vividsolutions.jts.index.strtree.STRtree
+import org.locationtech.jts.geom.{Envelope, Geometry}
+import org.locationtech.jts.index.strtree.STRtree
 import spatialspark.operator.SpatialOperator
 import spatialspark.partition._
 import SpatialOperator._

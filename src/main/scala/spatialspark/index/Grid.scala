@@ -16,8 +16,8 @@
 
 package spatialspark.index
 
-import com.vividsolutions.jts.geom.{GeometryFactory, Envelope, Geometry}
-import com.vividsolutions.jts.io.WKTReader
+import org.locationtech.jts.geom.{GeometryFactory, Envelope, Geometry}
+import org.locationtech.jts.io.WKTReader
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}

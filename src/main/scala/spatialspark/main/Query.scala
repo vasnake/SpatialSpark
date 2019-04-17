@@ -18,8 +18,8 @@ package spatialspark.main
 
 import spatialspark.index.STIndex
 import spatialspark.util.MBR
-import com.vividsolutions.jts.geom.{Envelope, GeometryFactory}
-import com.vividsolutions.jts.io.WKTReader
+import org.locationtech.jts.geom.{Envelope, GeometryFactory}
+import org.locationtech.jts.io.WKTReader
 import spatialspark.operator.SpatialOperator
 import spatialspark.query.RangeQuery
 import org.apache.spark.{SparkContext, SparkConf}

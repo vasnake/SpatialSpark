@@ -16,7 +16,7 @@
 
 package spatialspark.join
 
-import com.vividsolutions.jts.geom.Geometry
+import org.locationtech.jts.geom.Geometry
 import org.apache.spark.rdd.RDD
 import spatialspark.operator.SpatialOperator._
 
