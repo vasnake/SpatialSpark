@@ -238,7 +238,7 @@ object BroadcastSpatialJoin {
   /**
     * Length of arc on equator about 100km for 1 degree
     */
-  private val degreesInMeter = 1d / 111200d
+  private val degreesInMeter = 1d / 111000d
   private val pi180 = math.Pi / 180d
 
   /**
