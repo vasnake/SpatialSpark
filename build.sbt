@@ -1,5 +1,5 @@
 val Organization = "me.simin"
-val Version = "1.2.2"
+val Version = "1.2.3-SNAPSHOT"
 
 val ScalaVersion = "2.12.8"
 val SparkVersion = "2.4.1"
